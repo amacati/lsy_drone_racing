@@ -70,12 +70,12 @@ def init_run(init_wandb: bool = True) -> tuple[Run, dict]:
     return run, config
 
 
-def main(config: str = "config/getting_started.yaml", gui: bool = False, init_wandb: bool = True):
+def main(config: str = "config/getting_started.yaml", init_wandb: bool = True):
     """Create the environment, check its compatibility with sb3, and run a PPO agent."""
     logging.basicConfig(level=logging.INFO)
     root_path = Path(__file__).resolve().parents[1]
     config_path = root_path / config
-    env = create_race_env(config_path=config_path, gui=gui)
+    env = create_race_env(config_path=config_path, gui=False)
     check_env(env)  # Sanity check to ensure the environment conforms to the sb3 API
 
     run, cfg = init_run(init_wandb=init_wandb)
