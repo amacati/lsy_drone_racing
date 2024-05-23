@@ -22,7 +22,7 @@ import logging
 from typing import Any
 
 import numpy as np
-from gymnasium import Wrapper
+from gymnasium import Env, Wrapper
 from gymnasium.error import InvalidAction
 from gymnasium.spaces import Box
 from safe_control_gym.controllers.firmware.firmware_wrapper import FirmwareWrapper
@@ -296,3 +296,74 @@ class DroneRacingObservationWrapper:
         obs, reward, done, info, action = self.env.step(*args, **kwargs)
         obs = DroneRacingWrapper.observation_transform(obs, info)
         return obs, reward, done, info, action
+
+
+class RewardWrapper(Wrapper):
+    """Wrapper to alter the default reward function from the environment for RL training."""
+
+    def __init__(self, env: Env):
+        """Initialize the wrapper.
+
+        Args:
+            env: The firmware wrapper.
+        """
+        super().__init__(env)
+        self._last_pos = None
+        self._last_gate = None
+
+    def reset(self, *args: Any, **kwargs: dict[str, Any]) -> np.ndarray:
+        """Reset the environment.
+
+        Args:
+            args: Positional arguments to pass to the firmware wrapper.
+            kwargs: Keyword arguments to pass to the firmware wrapper.
+
+        Returns:
+            The initial observation of the next episode.
+        """
+        obs, info = self.env.reset(*args, **kwargs)
+        self._last_pos = obs[:3]
+        self._last_gate = info["current_gate_id"]
+        del info["symbolic_model"]
+        del info["symbolic_constraints"]
+        return obs, info
+
+    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
+        """Take a step in the environment.
+
+        Args:
+            action: The action to take in the environment. See action space for details.
+
+        Returns:
+            The next observation, the reward, the terminated and truncated flags, and the info dict.
+        """
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        reward = self._compute_reward(obs, reward, terminated, truncated, info)
+        return obs, reward, terminated, truncated, info
+
+    def _compute_reward(
+        self, obs: np.ndarray, reward: float, terminated: bool, truncated: bool, info: dict
+    ) -> float:
+        """Compute the reward for the current step.
+
+        Args:
+            obs: The current observation.
+            reward: The reward from the environment.
+            terminated: True if the episode is terminated.
+            truncated: True if the episode is truncated.
+            info: Additional information from the environment.
+
+        Returns:
+            The computed reward.
+        """
+        gate_id = info["current_gate_id"]
+        gate_distance_now = np.linalg.norm(info["gates_pose"][gate_id, :3] - obs[:3])
+        gate_distance_old = np.linalg.norm(info["gates_pose"][gate_id, :3] - self._last_pos)
+        gate_distance_reward = gate_distance_old - gate_distance_now
+
+        gate_passed_reward = 0 if gate_id == self._last_gate else 1
+        collision_penalty = -1 if info["collision"][1] else 0
+        # Update the last position for the next step
+        self._last_pos - obs[:3]
+        total_reward = gate_distance_reward + gate_passed_reward + collision_penalty
+        return float(total_reward)
