@@ -367,12 +367,8 @@ class RewardWrapper(Wrapper):
         Returns:
             The computed reward.
         """
-        # gate_id = info["current_gate_id"]
-        # gate_distance_now = np.linalg.norm(info["gates_pose"][gate_id, :3] - obs[:3])
-        # gate_distance_old = np.linalg.norm(info["gates_pose"][gate_id, :3] - self._last_pos)
-        # gate_distance_reward = gate_distance_old - gate_distance_now
-
-        # gate_passed_reward = 0 if gate_id == self._last_gate else 0.1
-        crash_penality = -100 if terminated and not info["task_completed"] else 0
-        target = np.array([1, 1, 1])
-        return np.exp(-np.linalg.norm(target - obs[:3])) + crash_penality
+        gate_id = info["current_gate_id"]
+        gate_reward = np.exp(-np.linalg.norm(info["gates_pose"][gate_id, :3] - obs[:3]))
+        gate_passed_reward = 0 if gate_id == self._last_gate else 0.1
+        crash_penality = -1 if terminated and not info["task_completed"] else 0
+        return gate_reward + crash_penality + gate_passed_reward

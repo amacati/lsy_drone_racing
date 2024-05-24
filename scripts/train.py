@@ -130,6 +130,7 @@ def main(config: str = "config/getting_started.yaml", init_wandb: bool = True, a
     model.learn(**cfg.learn.toDict(), callback=CallbackList(callbacks))
     model.save(save_path / "model.zip")
     env.save(save_path / "env.pkl")
+    logger.info("Training complete, model saved.")
 
 
 if __name__ == "__main__":
