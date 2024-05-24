@@ -135,7 +135,7 @@ class DroneRacingWrapper(Wrapper):
         self._drone_pose = obs[:4]
         # Store obstacle height for observation expansion during env steps.
         obs = self.observation_transform(obs, info).astype(np.float32)
-        # assert obs in self.observation_space, f"Invalid observation: {obs}"
+        self._drone_pose = obs[[0, 1, 2, 5]]
         return obs, info
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
@@ -177,7 +177,7 @@ class DroneRacingWrapper(Wrapper):
         if not terminated and not truncated:
             self._sim_time += self.env.ctrl_dt
         obs = self.observation_transform(obs, info).astype(np.float32)
-        self._drone_pose = obs[:4]
+        self._drone_pose = obs[[0, 1, 2, 5]]
         if obs not in self.observation_space:
             terminated = True
             reward = -1
@@ -193,8 +193,8 @@ class DroneRacingWrapper(Wrapper):
         Returns:
             The transformed action.
         """
-        action = self._drone_pose[:4] + (action * self.action_scale)[:4]
-        action[3] = map2pi(action[3])
+        action = self._drone_pose + (action * self.action_scale)
+        action[3] = map2pi(action[3])  # Ensure yaw is in [-pi, pi]
         return action
 
     def render(self):
