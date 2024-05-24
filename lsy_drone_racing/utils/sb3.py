@@ -21,7 +21,7 @@ class WandbLogger(KVWriter, SeqWriter):
     ):
         wandb.run.log(key_values, step=step)
         if self._log_to_stdout:
-            logger.info("\n".join(f"{k}: {v}" for k, v in key_values.items()) + "\n" * 2)
+            logger.info("\n" + "\n".join(f"{k}: {v}" for k, v in key_values.items()) + "\n")
 
     def write_sequence(self, sequence: list[str]):
         pass

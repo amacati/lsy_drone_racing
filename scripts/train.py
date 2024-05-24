@@ -10,13 +10,14 @@ import fire
 import pip._vendor.tomli as tomllib
 import torch
 import wandb
-from munch import munchify
+from munch import Munch, munchify
 from safe_control_gym.utils.registration import make
-from stable_baselines3 import SAC
+from stable_baselines3 import SAC, TD3
 from stable_baselines3.common.callbacks import CallbackList, EvalCallback
-from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.env_util import SubprocVecEnv, make_vec_env
 from stable_baselines3.common.logger import Logger
+from stable_baselines3.common.noise import NormalActionNoise
+from stable_baselines3.common.vec_env import VecNormalize
 
 from lsy_drone_racing.constants import FIRMWARE_FREQ
 from lsy_drone_racing.utils import load_config
@@ -28,8 +29,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+algos = {"sac": SAC, "td3": TD3}
 
-def create_race_env(config_path: Path, gui: bool = False) -> DroneRacingWrapper:
+
+def create_race_env(config_path: Path, gui: bool = False) -> RewardWrapper:
     """Create the drone racing environment."""
     # Load configuration and check if firmare should be used.
     config = load_config(config_path)
@@ -43,12 +46,12 @@ def create_race_env(config_path: Path, gui: bool = False) -> DroneRacingWrapper:
     config.quadrotor_config["ctrl_freq"] = FIRMWARE_FREQ
     env_factory = partial(make, "quadrotor", **config.quadrotor_config)
     firmware_env = make("firmware", env_factory, FIRMWARE_FREQ, CTRL_FREQ)
-    return DroneRacingWrapper(firmware_env, terminate_on_lap=True)
+    return RewardWrapper(DroneRacingWrapper(firmware_env, terminate_on_lap=True))
 
 
-def init_run(init_wandb: bool = True) -> tuple[Run, dict]:
+def init_run(config: Path, init_wandb: bool = True) -> tuple[Run, Munch]:
     """Initialize the wandb run and load the configuration."""
-    with open(Path(__file__).parents[1] / "config/train_sac.toml", "rb") as f:
+    with open(config, "rb") as f:
         config = munchify(tomllib.load(f))
     if getattr(config.rng, "seed", None) is not None:
         torch.manual_seed(config.rng.seed)
@@ -70,53 +73,53 @@ def init_run(init_wandb: bool = True) -> tuple[Run, dict]:
     return run, config
 
 
-def main(config: str = "config/getting_started.yaml", init_wandb: bool = True):
-    """Create the environment, check its compatibility with sb3, and run a PPO agent."""
+def main(config: str = "config/getting_started.yaml", init_wandb: bool = True, algo: str = "sac"):
+    """Train a drone racing agent."""
+    algo = algo.lower()
+    assert algo in algos, f"Algorithm {algo} not supported. Choose from {algos.keys()}."
     logging.basicConfig(level=logging.INFO)
     root_path = Path(__file__).resolve().parents[1]
+    save_path = root_path / "saves" / algo
+    save_path.mkdir(exist_ok=True, parents=True)
     config_path = root_path / config
-    env = create_race_env(config_path=config_path, gui=False)
-    check_env(env)  # Sanity check to ensure the environment conforms to the sb3 API
 
-    run, cfg = init_run(init_wandb=init_wandb)
+    run, cfg = init_run(config=root_path / "config" / f"{algo}.toml", init_wandb=init_wandb)
 
     env = make_vec_env(
-        lambda: RewardWrapper(create_race_env(config_path)),
-        cfg.n_envs,
+        lambda: create_race_env(config_path),
+        cfg.env.n_envs,
         vec_env_cls=SubprocVecEnv,
         vec_env_kwargs={"start_method": "spawn"},
     )
 
-    model = SAC(
-        "MlpPolicy",
-        env,
-        learning_rate=cfg.lr,
-        buffer_size=int(cfg.buffer_size),
-        batch_size=cfg.batch_size,
-        learning_starts=cfg.learning_starts,
-        train_freq=cfg.train_freq,
-        gradient_steps=cfg.gradient_steps,
-        ent_coef=cfg.ent_coef,
-        target_update_interval=cfg.target_update_interval,
-        tau=cfg.tau,
-        gamma=cfg.gamma,
-        verbose=1,
-    )
+    env = VecNormalize(env, norm_obs=True, norm_reward=False)
+    kwargs = {k: v for k, v in cfg.model.toDict().items() if not isinstance(v, dict)}
+    if "action_noise" in cfg.model:
+        if cfg.model.action_noise.type == "NormalActionNoise":
+            kwargs["action_noise"] = NormalActionNoise(
+                mean=cfg.model.action_noise.kwargs.mean * torch.ones(env.action_space.shape[0]),
+                sigma=cfg.model.action_noise.kwargs.sigma * torch.ones(env.action_space.shape[0]),
+            )
+        else:
+            raise NotImplementedError(f"Action noise {cfg.model.action_noise.type} not supported.")
+    model = algos[algo]("MlpPolicy", env, **kwargs, verbose=1)
+
     if run is not None:
         model.set_logger(Logger(folder=None, output_formats=[WandbLogger(verbose=1)]))
 
     eval_env = make_vec_env(
-        lambda: RewardWrapper(create_race_env(config_path)),
-        cfg.n_envs,
+        lambda: create_race_env(config_path),
+        cfg.eval.n_envs,
         vec_env_cls=SubprocVecEnv,
         vec_env_kwargs={"start_method": "spawn"},
     )
+    eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False)
 
     eval_callback = EvalCallback(
         eval_env=eval_env,
-        best_model_save_path=root_path / "saves/sac_drone_racing/best_model",
-        eval_freq=cfg.eval_freq,
-        n_eval_episodes=cfg.n_eval_episodes,
+        best_model_save_path=save_path / "best_model",
+        eval_freq=cfg.eval.freq,
+        n_eval_episodes=cfg.eval.n_episodes,
         callback_on_new_best=None,
         verbose=1,
     )
@@ -124,8 +127,9 @@ def main(config: str = "config/getting_started.yaml", init_wandb: bool = True):
     callbacks = [eval_callback]
     if run:
         callbacks.append(WandbSuccessCallback("task_completed"))
-    model.learn(total_timesteps=cfg.n_timesteps, callback=CallbackList(callbacks))
-    model.save(root_path / "saves" / "sac_drone_racing")
+    model.learn(**cfg.learn.toDict(), callback=CallbackList(callbacks))
+    model.save(save_path / "model.zip")
+    env.save(save_path / "env.pkl")
 
 
 if __name__ == "__main__":

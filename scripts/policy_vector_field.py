@@ -1,23 +1,23 @@
-"""SAC agent training script for drone racing."""
+"""Policy analysis script."""
 from __future__ import annotations
 
 import logging
-import time
 from functools import partial
 from pathlib import Path
 
 import fire
+import matplotlib.pyplot as plt
+import numpy as np
 from safe_control_gym.utils.registration import make
 from stable_baselines3 import SAC, TD3
 from stable_baselines3.common.env_util import DummyVecEnv, make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
 
-from lsy_drone_racing.constants import FIRMWARE_FREQ
+from lsy_drone_racing.constants import FIRMWARE_FREQ, GateDesc
 from lsy_drone_racing.utils import load_config
 from lsy_drone_racing.wrapper import DroneRacingWrapper, RewardWrapper
 
 logger = logging.getLogger(__name__)
-
 
 algos = {"sac": SAC, "td3": TD3}
 
@@ -39,13 +39,32 @@ def create_race_env(config_path: Path, gui: bool = False) -> DroneRacingWrapper:
     return RewardWrapper(DroneRacingWrapper(firmware_env, terminate_on_lap=True))
 
 
-def main(
-    config: str = "config/getting_started.yaml",
-    gui: bool = True,
-    n_tests: int = 1,
-    delay: float = 0,
-    algo: str = "SAC",
+def plot_policy_field(
+    action: np.ndarray, x: np.ndarray, y: np.ndarray, obs: np.ndarray, info: dict
 ):
+    fig, ax = plt.subplots()
+    assert action.shape == (len(x), 4)
+    assert x.shape == y.shape
+    ax.quiver(x, y, action[:, 0], action[:, 1])
+    ax.add_patch(plt.Circle(obs[:2], 0.03, color="g"))
+    for obstacle in info["obstacles_pose"]:
+        ax.add_patch(plt.Circle(obstacle[:2], 0.05, color="r"))
+    for gate in info["gates_pose"]:
+        ax.add_patch(
+            plt.Rectangle(
+                gate[:2] - np.array([GateDesc.edge / 2, 0]),
+                GateDesc.edge,
+                0.02,
+                rotation_point="center",
+                angle=gate[5] * 180 / np.pi,
+                color="b",
+            )
+        )
+    ax.set_aspect("equal")
+    plt.show()
+
+
+def main(config: str = "config/getting_started.yaml", algo: str = "sac"):
     """Create the environment, check its compatibility with sb3, and run a PPO agent."""
     algo = algo.lower()
     assert algo in algos, f"Algorithm {algo} not supported. Choose from {algos.keys()}."
@@ -53,30 +72,23 @@ def main(
     root_path = Path(__file__).resolve().parents[1]
     save_path = root_path / "saves" / algo
     config_path = root_path / config
-
-    env = make_vec_env(lambda: create_race_env(config_path, gui=gui), 1, vec_env_cls=DummyVecEnv)
+    env = make_vec_env(
+        lambda: create_race_env(config_path=config_path, gui=False), 1, vec_env_cls=DummyVecEnv
+    )
     env = VecNormalize.load(save_path / "env.pkl", env)
-    assert algo in algos, f"Algorithm {algo} not supported."
 
+    obs = env.reset()
+    _, _, _, info = env.step(np.array([[0, 0, 0, 0]], np.float32))
+    obs = env.unnormalize_obs(obs)[0]
+    obs[2] = 0.5
+    x, y = np.meshgrid(np.linspace(-2, 2, 100), np.linspace(-2, 2, 100))
+    x, y = x.flatten(), y.flatten()
+    obs_batch = np.stack([obs] * len(x))
+    obs_batch[:, 0] = x
+    obs_batch[:, 1] = y
     model = algos[algo].load(save_path / "model.zip")
-    success = []
-    steps = []
-    for i in range(n_tests):
-        obs = env.reset()
-        done = False
-        steps.append(0)
-        while not done:
-            # import numpy as np
-
-            # action = np.array([1, 1.0, 1, 0]) - env.unnormalize_obs(obs)[:, :4]
-            # action = action.clip(-1, 1).astype(np.float32)
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, done, info = env.step(action)
-            time.sleep(delay)
-            steps[-1] += 1
-        success.append(info[0]["task_completed"])
-    print(f"Success rate: {sum(success) / n_tests:.2f}")
-    print(f"Avg. steps: {sum(steps) / n_tests:.2f}")
+    action, _ = model.predict(env.normalize_obs(obs_batch), deterministic=True)
+    plot_policy_field(action, x, y, obs, info[0])
 
 
 if __name__ == "__main__":
