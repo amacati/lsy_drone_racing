@@ -45,6 +45,9 @@ jobs:
       - name: Install stable baselines
         run: pip install stable-baselines3
         shell: bash -el {0}
+      - name: Install stable baselines
+        run: pip install stable-baselines3
+        shell: bash -el {0}
       - run: pip install .
         shell: bash -el {0}
       - name: Run simulation tests
