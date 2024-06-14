@@ -42,6 +42,8 @@ jobs:
           cd pycffirmware
           git submodule update --init --recursive
           ./wrapper/build_linux.sh
+      - name: Install stable baselines
+        run: pip install stable-baselines3
         shell: bash -el {0}
       - run: pip install .
         shell: bash -el {0}
