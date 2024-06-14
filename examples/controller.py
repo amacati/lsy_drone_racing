@@ -27,12 +27,14 @@ Tips:
 
 from __future__ import annotations  # Python 3.10 type hints
 
+from pathlib import Path
+
 import numpy as np
-from scipy import interpolate
+from stable_baselines3 import PPO
 
 from lsy_drone_racing.command import Command
 from lsy_drone_racing.controller import BaseController
-from lsy_drone_racing.utils import draw_trajectory
+from lsy_drone_racing.wrapper import ObsWrapper
 
 
 class Controller(BaseController):
@@ -80,73 +82,8 @@ class Controller(BaseController):
         #########################
         # REPLACE THIS (START) ##
         #########################
-
-        # Example: Hard-code waypoints through the gates. Obviously this is a crude way of
-        # completing the challenge that is highly susceptible to noise and does not generalize at
-        # all. It is meant solely as an example on how the drones can be controlled
-        waypoints = []
-        waypoints.append([self.initial_obs[0], self.initial_obs[1], 0.3])
-        gates = self.NOMINAL_GATES
-        z_low = initial_info["gate_dimensions"]["low"]["height"]
-        z_high = initial_info["gate_dimensions"]["tall"]["height"]
-        waypoints.append([1, 0, z_low])
-        waypoints.append([gates[0][0] + 0.2, gates[0][1] + 0.1, z_low])
-        waypoints.append([gates[0][0] + 0.1, gates[0][1], z_low])
-        waypoints.append([gates[0][0] - 0.1, gates[0][1], z_low])
-        waypoints.append(
-            [
-                (gates[0][0] + gates[1][0]) / 2 - 0.7,
-                (gates[0][1] + gates[1][1]) / 2 - 0.3,
-                (z_low + z_high) / 2,
-            ]
-        )
-        waypoints.append(
-            [
-                (gates[0][0] + gates[1][0]) / 2 - 0.5,
-                (gates[0][1] + gates[1][1]) / 2 - 0.6,
-                (z_low + z_high) / 2,
-            ]
-        )
-        waypoints.append([gates[1][0] - 0.3, gates[1][1] - 0.2, z_high])
-        waypoints.append([gates[1][0] + 0.2, gates[1][1] + 0.2, z_high])
-        waypoints.append([gates[2][0], gates[2][1] - 0.4, z_low])
-        waypoints.append([gates[2][0], gates[2][1] + 0.2, z_low])
-        waypoints.append([gates[2][0], gates[2][1] + 0.2, z_high + 0.2])
-        waypoints.append([gates[3][0], gates[3][1] + 0.1, z_high])
-        waypoints.append([gates[3][0], gates[3][1] - 0.1, z_high + 0.1])
-        waypoints.append(
-            [
-                initial_info["x_reference"][0],
-                initial_info["x_reference"][2],
-                initial_info["x_reference"][4],
-            ]
-        )
-        waypoints.append(
-            [
-                initial_info["x_reference"][0],
-                initial_info["x_reference"][2] - 0.2,
-                initial_info["x_reference"][4],
-            ]
-        )
-        waypoints = np.array(waypoints)
-
-        tck, u = interpolate.splprep([waypoints[:, 0], waypoints[:, 1], waypoints[:, 2]], s=0.1)
-        self.waypoints = waypoints
-        duration = 12
-        t = np.linspace(0, 1, int(duration * self.CTRL_FREQ))
-        self.ref_x, self.ref_y, self.ref_z = interpolate.splev(t, tck)
-        assert max(self.ref_z) < 2.5, "Drone must stay below the ceiling"
-
-        if self.VERBOSE:
-            # Draw the trajectory on PyBullet's GUI.
-            draw_trajectory(initial_info, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
-
-        self._take_off = False
-        self._setpoint_land = False
-        self._land = False
-        #########################
-        # REPLACE THIS (END) ####
-        #########################
+        self.policy = PPO.load(Path(__file__).resolve().parents[1] / "models/ppo/model.zip")
+        self._last_action = np.zeros(3)
 
     def compute_control(
         self,
@@ -175,50 +112,23 @@ class Controller(BaseController):
         Returns:
             The command type and arguments to be sent to the quadrotor. See `Command`.
         """
-        iteration = int(ep_time * self.CTRL_FREQ)
+        target_vel = np.zeros(3)
+        target_acc = np.zeros(3)
+        target_yaw = 0.0
+        target_rpy_rates = np.zeros(3)
+        obs_tf = ObsWrapper.observation_transform(obs, info, self._last_action)
+        action, _ = self.policy.predict(obs_tf, deterministic=True)
+        self._last_action[:] = action
+        target_pos = self.action_transform(action, obs)
 
-        #########################
-        # REPLACE THIS (START) ##
-        #########################
-
-        # Handcrafted solution for getting_stated scenario.
-
-        if not self._take_off:
-            command_type = Command.TAKEOFF
-            args = [0.3, 2]  # Height, duration
-            self._take_off = True  # Only send takeoff command once
-        else:
-            step = iteration - 2 * self.CTRL_FREQ  # Account for 2s delay due to takeoff
-            if ep_time - 2 > 0 and step < len(self.ref_x):
-                target_pos = np.array([self.ref_x[step], self.ref_y[step], self.ref_z[step]])
-                target_vel = np.zeros(3)
-                target_acc = np.zeros(3)
-                target_yaw = 0.0
-                target_rpy_rates = np.zeros(3)
-                command_type = Command.FULLSTATE
-                args = [target_pos, target_vel, target_acc, target_yaw, target_rpy_rates, ep_time]
-            # Notify set point stop has to be called every time we transition from low-level
-            # commands to high-level ones. Prepares for landing
-            elif step >= len(self.ref_x) and not self._setpoint_land:
-                command_type = Command.NOTIFYSETPOINTSTOP
-                args = []
-                self._setpoint_land = True
-            elif step >= len(self.ref_x) and not self._land:
-                command_type = Command.LAND
-                args = [0.0, 2.0]  # Height, duration
-                self._land = True  # Send landing command only once
-            elif self._land:
-                command_type = Command.FINISHED
-                args = []
-            else:
-                command_type = Command.NONE
-                args = []
-
-        #########################
-        # REPLACE THIS (END) ####
-        #########################
-
+        command_type = Command.FULLSTATE
+        args = [target_pos, target_vel, target_acc, target_yaw, target_rpy_rates, ep_time]
         return command_type, args
+
+    @staticmethod
+    def action_transform(action, obs):
+        drone_pos = obs[:3]
+        return drone_pos + action
 
     def step_learn(
         self,
@@ -228,57 +138,7 @@ class Controller(BaseController):
         done: bool | None = None,
         info: dict | None = None,
     ):
-        """Learning and controller updates called between control steps.
-
-        INSTRUCTIONS:
-            Use the historically collected information in the five data buffers of actions,
-            observations, rewards, done flags, and information dictionaries to learn, adapt, and/or
-            re-plan.
-
-        Args:
-            action: Most recent applied action.
-            obs: Most recent observation of the quadrotor state.
-            reward: Most recent reward.
-            done: Most recent done flag.
-            info: Most recent information dictionary.
-
-        """
-        #########################
-        # REPLACE THIS (START) ##
-        #########################
-
-        # Store the last step's events.
-        self.action_buffer.append(action)
-        self.obs_buffer.append(obs)
-        self.reward_buffer.append(reward)
-        self.done_buffer.append(done)
-        self.info_buffer.append(info)
-
-        # Implement some learning algorithm here if needed
-
-        #########################
-        # REPLACE THIS (END) ####
-        #########################
+        ...
 
     def episode_learn(self):
-        """Learning and controller updates called between episodes.
-
-        INSTRUCTIONS:
-            Use the historically collected information in the five data buffers of actions,
-            observations, rewards, done flags, and information dictionaries to learn, adapt, and/or
-            re-plan.
-
-        """
-        #########################
-        # REPLACE THIS (START) ##
-        #########################
-
-        _ = self.action_buffer
-        _ = self.obs_buffer
-        _ = self.reward_buffer
-        _ = self.done_buffer
-        _ = self.info_buffer
-
-        #########################
-        # REPLACE THIS (END) ####
-        #########################
+        self._last_action = np.zeros(3)

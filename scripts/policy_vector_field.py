@@ -9,17 +9,17 @@ import fire
 import matplotlib.pyplot as plt
 import numpy as np
 from safe_control_gym.utils.registration import make
-from stable_baselines3 import SAC, TD3
+from stable_baselines3 import PPO, SAC, TD3
 from stable_baselines3.common.env_util import DummyVecEnv, make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
 
 from lsy_drone_racing.constants import FIRMWARE_FREQ, GateDesc
 from lsy_drone_racing.utils import load_config
-from lsy_drone_racing.wrapper import DroneRacingWrapper, RewardWrapper
+from lsy_drone_racing.wrapper import DroneRacingWrapper, ObsWrapper, RewardWrapper
 
 logger = logging.getLogger(__name__)
 
-algos = {"sac": SAC, "td3": TD3}
+algos = {"sac": SAC, "td3": TD3, "ppo": PPO}
 
 
 def create_race_env(config_path: Path, gui: bool = False) -> DroneRacingWrapper:
@@ -36,14 +36,14 @@ def create_race_env(config_path: Path, gui: bool = False) -> DroneRacingWrapper:
     config.quadrotor_config["ctrl_freq"] = FIRMWARE_FREQ
     env_factory = partial(make, "quadrotor", **config.quadrotor_config)
     firmware_env = make("firmware", env_factory, FIRMWARE_FREQ, CTRL_FREQ)
-    return RewardWrapper(DroneRacingWrapper(firmware_env, terminate_on_lap=True))
+    return ObsWrapper(RewardWrapper(DroneRacingWrapper(firmware_env, terminate_on_lap=True)))
 
 
 def plot_policy_field(
     action: np.ndarray, x: np.ndarray, y: np.ndarray, obs: np.ndarray, info: dict
 ):
     fig, ax = plt.subplots()
-    assert action.shape == (len(x), 4)
+    assert action.shape == (len(x), 3)
     assert x.shape == y.shape
     ax.quiver(x, y, action[:, 0], action[:, 1])
     ax.add_patch(plt.Circle(obs[:2], 0.03, color="g"))
@@ -64,7 +64,7 @@ def plot_policy_field(
     plt.show()
 
 
-def main(config: str = "config/getting_started.yaml", algo: str = "sac"):
+def main(config: str = "config/learning.yaml", algo: str = "sac"):
     """Create the environment, check its compatibility with sb3, and run a PPO agent."""
     algo = algo.lower()
     assert algo in algos, f"Algorithm {algo} not supported. Choose from {algos.keys()}."
@@ -75,11 +75,10 @@ def main(config: str = "config/getting_started.yaml", algo: str = "sac"):
     env = make_vec_env(
         lambda: create_race_env(config_path=config_path, gui=False), 1, vec_env_cls=DummyVecEnv
     )
-    env = VecNormalize.load(save_path / "env.pkl", env)
 
     obs = env.reset()
-    _, _, _, info = env.step(np.array([[0, 0, 0, 0]], np.float32))
-    obs = env.unnormalize_obs(obs)[0]
+    obs, _, _, info = env.step(np.array([[0, 0, 0]], np.float32))
+    obs = obs[0]
     obs[2] = 0.5
     x, y = np.meshgrid(np.linspace(-2, 2, 100), np.linspace(-2, 2, 100))
     x, y = x.flatten(), y.flatten()
@@ -87,7 +86,7 @@ def main(config: str = "config/getting_started.yaml", algo: str = "sac"):
     obs_batch[:, 0] = x
     obs_batch[:, 1] = y
     model = algos[algo].load(save_path / "model.zip")
-    action, _ = model.predict(env.normalize_obs(obs_batch), deterministic=True)
+    action, _ = model.predict(obs_batch, deterministic=True)
     plot_policy_field(action, x, y, obs, info[0])
 
 

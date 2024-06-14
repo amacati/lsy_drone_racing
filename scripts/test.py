@@ -8,18 +8,18 @@ from pathlib import Path
 
 import fire
 from safe_control_gym.utils.registration import make
-from stable_baselines3 import SAC, TD3
+from stable_baselines3 import PPO, SAC, TD3
 from stable_baselines3.common.env_util import DummyVecEnv, make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
 
 from lsy_drone_racing.constants import FIRMWARE_FREQ
 from lsy_drone_racing.utils import load_config
-from lsy_drone_racing.wrapper import DroneRacingWrapper, RewardWrapper
+from lsy_drone_racing.wrapper import DroneRacingWrapper, ObsWrapper, RewardWrapper
 
 logger = logging.getLogger(__name__)
 
 
-algos = {"sac": SAC, "td3": TD3}
+algos = {"sac": SAC, "td3": TD3, "ppo": PPO}
 
 
 def create_race_env(config_path: Path, gui: bool = False) -> DroneRacingWrapper:
@@ -36,11 +36,11 @@ def create_race_env(config_path: Path, gui: bool = False) -> DroneRacingWrapper:
     config.quadrotor_config["ctrl_freq"] = FIRMWARE_FREQ
     env_factory = partial(make, "quadrotor", **config.quadrotor_config)
     firmware_env = make("firmware", env_factory, FIRMWARE_FREQ, CTRL_FREQ)
-    return RewardWrapper(DroneRacingWrapper(firmware_env, terminate_on_lap=True))
+    return ObsWrapper(RewardWrapper(DroneRacingWrapper(firmware_env, terminate_on_lap=True)))
 
 
 def main(
-    config: str = "config/getting_started.yaml",
+    config: str = "config/learning.yaml",
     gui: bool = True,
     n_tests: int = 1,
     delay: float = 0,
@@ -55,28 +55,30 @@ def main(
     config_path = root_path / config
 
     env = make_vec_env(lambda: create_race_env(config_path, gui=gui), 1, vec_env_cls=DummyVecEnv)
-    env = VecNormalize.load(save_path / "env.pkl", env)
+    # env = VecNormalize.load(save_path / "env.pkl", env)
     assert algo in algos, f"Algorithm {algo} not supported."
 
     model = algos[algo].load(save_path / "model.zip")
     success = []
     steps = []
+    rewards = []
     for i in range(n_tests):
         obs = env.reset()
         done = False
         steps.append(0)
+        rewards.append(0)
         while not done:
-            # import numpy as np
-
-            # action = np.array([1, 1.0, 1, 0]) - env.unnormalize_obs(obs)[:, :4]
-            # action = action.clip(-1, 1).astype(np.float32)
             action, _ = model.predict(obs, deterministic=True)
             obs, reward, done, info = env.step(action)
+            print(env.envs[0].sim_time)
             time.sleep(delay)
             steps[-1] += 1
+            rewards[-1] += reward[0]
+        print(f"Test {i + 1} reached gate {info[0]['current_gate_id']}.")
         success.append(info[0]["task_completed"])
     print(f"Success rate: {sum(success) / n_tests:.2f}")
     print(f"Avg. steps: {sum(steps) / n_tests:.2f}")
+    print(f"Avg. reward: {sum(rewards) / n_tests:.2f}")
 
 
 if __name__ == "__main__":

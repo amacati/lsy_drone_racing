@@ -12,24 +12,33 @@ import torch
 import wandb
 from munch import Munch, munchify
 from safe_control_gym.utils.registration import make
-from stable_baselines3 import SAC, TD3
+from stable_baselines3 import PPO, SAC, TD3
 from stable_baselines3.common.callbacks import CallbackList, EvalCallback
 from stable_baselines3.common.env_util import SubprocVecEnv, make_vec_env
 from stable_baselines3.common.logger import Logger
 from stable_baselines3.common.noise import NormalActionNoise
-from stable_baselines3.common.vec_env import VecNormalize
 
 from lsy_drone_racing.constants import FIRMWARE_FREQ
 from lsy_drone_racing.utils import load_config
-from lsy_drone_racing.utils.sb3 import WandbLogger, WandbSuccessCallback
-from lsy_drone_racing.wrapper import DroneRacingWrapper, RewardWrapper
+from lsy_drone_racing.utils.sb3 import (
+    NeuralStatsCallback,
+    PlacticityCallback,
+    RaceStatsCallback,
+    WandbLogger,
+)
+from lsy_drone_racing.wrapper import (
+    DroneRacingWrapper,
+    MultiProcessingWrapper,
+    ObsWrapper,
+    RewardWrapper,
+)
 
 if TYPE_CHECKING:
     from wandb.sdk.wandb_run import Run
 
 logger = logging.getLogger(__name__)
 
-algos = {"sac": SAC, "td3": TD3}
+algos = {"sac": SAC, "td3": TD3, "ppo": PPO}
 
 
 def create_race_env(config_path: Path, gui: bool = False) -> RewardWrapper:
@@ -46,7 +55,8 @@ def create_race_env(config_path: Path, gui: bool = False) -> RewardWrapper:
     config.quadrotor_config["ctrl_freq"] = FIRMWARE_FREQ
     env_factory = partial(make, "quadrotor", **config.quadrotor_config)
     firmware_env = make("firmware", env_factory, FIRMWARE_FREQ, CTRL_FREQ)
-    return RewardWrapper(DroneRacingWrapper(firmware_env, terminate_on_lap=True))
+    env = DroneRacingWrapper(firmware_env, terminate_on_lap=True)
+    return ObsWrapper(RewardWrapper(MultiProcessingWrapper(env)))
 
 
 def init_run(config: Path, init_wandb: bool = True) -> tuple[Run, Munch]:
@@ -73,7 +83,23 @@ def init_run(config: Path, init_wandb: bool = True) -> tuple[Run, Munch]:
     return run, config
 
 
-def main(config: str = "config/getting_started.yaml", init_wandb: bool = True, algo: str = "sac"):
+def model_kwargs(kwargs: dict) -> dict:
+    new_kwargs = {k: v for k, v in kwargs.items() if not isinstance(v, dict)}
+    if (action_noise := kwargs.get("action_noise")) is not None:
+        if action_noise.type != "NormalActionNoise":
+            raise NotImplementedError(f"Action noise {action_noise.type} not supported.")
+        new_kwargs["action_noise"] = NormalActionNoise(
+            mean=action_noise.kwargs.mean * torch.ones(kwargs["env"].action_space.shape[0]),
+            sigma=action_noise.kwargs.sigma * torch.ones(kwargs["env"].action_space.shape[0]),
+        )
+    if (policy_kwargs := kwargs.get("policy_kwargs")) is not None:
+        if (fn := policy_kwargs.get("activation_fn")) is not None:
+            policy_kwargs["activation_fn"] = getattr(torch.nn, fn)
+        new_kwargs["policy_kwargs"] = policy_kwargs
+    return new_kwargs
+
+
+def main(config: str = "config/learning.yaml", wandb: bool = True, algo: str = "sac"):
     """Train a drone racing agent."""
     algo = algo.lower()
     assert algo in algos, f"Algorithm {algo} not supported. Choose from {algos.keys()}."
@@ -83,7 +109,7 @@ def main(config: str = "config/getting_started.yaml", init_wandb: bool = True, a
     save_path.mkdir(exist_ok=True, parents=True)
     config_path = root_path / config
 
-    run, cfg = init_run(config=root_path / "config" / f"{algo}.toml", init_wandb=init_wandb)
+    run, cfg = init_run(config=root_path / "config" / f"{algo}.toml", init_wandb=wandb)
 
     env = make_vec_env(
         lambda: create_race_env(config_path),
@@ -92,17 +118,8 @@ def main(config: str = "config/getting_started.yaml", init_wandb: bool = True, a
         vec_env_kwargs={"start_method": "spawn"},
     )
 
-    env = VecNormalize(env, norm_obs=True, norm_reward=False)
-    kwargs = {k: v for k, v in cfg.model.toDict().items() if not isinstance(v, dict)}
-    if "action_noise" in cfg.model:
-        if cfg.model.action_noise.type == "NormalActionNoise":
-            kwargs["action_noise"] = NormalActionNoise(
-                mean=cfg.model.action_noise.kwargs.mean * torch.ones(env.action_space.shape[0]),
-                sigma=cfg.model.action_noise.kwargs.sigma * torch.ones(env.action_space.shape[0]),
-            )
-        else:
-            raise NotImplementedError(f"Action noise {cfg.model.action_noise.type} not supported.")
-    model = algos[algo]("MlpPolicy", env, **kwargs, verbose=1)
+    # env = VecNormalize(env, norm_obs=True, norm_reward=False)
+    model = algos[algo]("MlpPolicy", env, **model_kwargs(cfg.model.toDict()), verbose=1)
 
     if run is not None:
         model.set_logger(Logger(folder=None, output_formats=[WandbLogger(verbose=1)]))
@@ -113,7 +130,7 @@ def main(config: str = "config/getting_started.yaml", init_wandb: bool = True, a
         vec_env_cls=SubprocVecEnv,
         vec_env_kwargs={"start_method": "spawn"},
     )
-    eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False)
+    # eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=False)
 
     eval_callback = EvalCallback(
         eval_env=eval_env,
@@ -124,12 +141,16 @@ def main(config: str = "config/getting_started.yaml", init_wandb: bool = True, a
         verbose=1,
     )
 
-    callbacks = [eval_callback]
-    if run:
-        callbacks.append(WandbSuccessCallback("task_completed"))
+    pkwargs = cfg.placticity.toDict() if cfg.get("placticity") else {}
+    callbacks = [
+        eval_callback,
+        RaceStatsCallback(),
+        PlacticityCallback(**pkwargs),
+        NeuralStatsCallback(),
+    ]
     model.learn(**cfg.learn.toDict(), callback=CallbackList(callbacks))
     model.save(save_path / "model.zip")
-    env.save(save_path / "env.pkl")
+    # env.save(save_path / "env.pkl")
     logger.info("Training complete, model saved.")
 
 
