@@ -5,6 +5,7 @@ on:
     branches:
       - master
       - main
+  workflow_dispatch:
 
 
 jobs:
@@ -30,7 +31,7 @@ jobs:
       #     pip install wheel==0.38.0
       - name: Install safe-control-gym
         run: |
-          git clone -b beta-iros-competition https://github.com/utiasDSL/safe-control-gym.git
+          git clone -b lsy_drone_racing https://github.com/utiasDSL/safe-control-gym.git
           cd safe-control-gym
           pip install . --no-deps 
           cd ..
