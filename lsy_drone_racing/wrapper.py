@@ -25,7 +25,7 @@ import numpy as np
 from gymnasium import Env, Wrapper
 from gymnasium.error import InvalidAction
 from gymnasium.spaces import Box
-from safe_control_gym.controllers.firmware.firmware_wrapper import FirmwareWrapper
+from safe_control_gym.envs.firmware_wrapper import FirmwareWrapper
 
 from lsy_drone_racing.rotations import map2pi
 

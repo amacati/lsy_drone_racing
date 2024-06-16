@@ -19,7 +19,6 @@ import fire
 import numpy as np
 import pybullet as p
 from safe_control_gym.utils.registration import make
-from safe_control_gym.utils.utils import sync
 
 from lsy_drone_racing.command import apply_sim_command
 from lsy_drone_racing.constants import FIRMWARE_FREQ
@@ -132,7 +131,8 @@ def simulate(
 
             # Synchronize the GUI.
             if config.quadrotor_config.gui:
-                sync(i, ep_start, CTRL_DT)
+                if (elapsed := time.time() - ep_start) < CTRL_DT * i:
+                    time.sleep(CTRL_DT * i - elapsed)
             i += 1
             # Break early after passing the last gate (=> gate -1) or task completion
             if terminate_on_lap and info["current_gate_id"] == -1:

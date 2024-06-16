@@ -1,7 +1,7 @@
 from functools import partial
 from pathlib import Path
 
-from safe_control_gym.controllers.firmware.firmware_wrapper import FirmwareWrapper
+from safe_control_gym.envs.firmware_wrapper import FirmwareWrapper
 from safe_control_gym.utils.registration import make
 
 from lsy_drone_racing.constants import FIRMWARE_FREQ

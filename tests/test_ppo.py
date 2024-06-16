@@ -1,7 +1,7 @@
 from typing import Generator
 
 import pytest
-from safe_control_gym.controllers.firmware.firmware_wrapper import FirmwareWrapper
+from safe_control_gym.envs.firmware_wrapper import FirmwareWrapper
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.ppo import PPO
