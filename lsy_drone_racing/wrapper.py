@@ -257,10 +257,10 @@ class DroneRacingObservationWrapper:
         Args:
             env: The firmware wrapper.
         """
-        if not isinstance(env, FirmwareWrapper):
-            raise TypeError(f"`env` must be an instance of `FirmwareWrapper`, is {type(env)}")
-        self.env = env
-        self.pyb_client_id: int = env.env.PYB_CLIENT
+        # if not isinstance(env, FirmwareWrapper):
+        #     raise TypeError(f"`env` must be an instance of `FirmwareWrapper`, is {type(env)}")
+        self.env = env.unwrapped
+        self.pyb_client_id: int = self.env.env.PYB_CLIENT
 
     def __getattribute__(self, name: str) -> Any:
         """Get an attribute from the object.

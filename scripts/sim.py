@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import fire
+import gymnasium
 import numpy as np
 import pybullet as p
-from safe_control_gym.utils.registration import make
+import safe_control_gym  # noqa: F401
 
 from lsy_drone_racing.command import apply_sim_command
 from lsy_drone_racing.constants import FIRMWARE_FREQ
@@ -59,15 +60,18 @@ def simulate(
     CTRL_DT = 1 / CTRL_FREQ
 
     # Create environment.
-    assert config.use_firmware, "Firmware must be used for the competition."
-    pyb_freq = config.quadrotor_config["pyb_freq"]
+    pyb_freq = config.quadrotor_config["sim_freq"]
     assert pyb_freq % FIRMWARE_FREQ == 0, "pyb_freq must be a multiple of firmware freq"
     # The env.step is called at a firmware_freq rate, but this is not as intuitive to the end
     # user, and so we abstract the difference. This allows ctrl_freq to be the rate at which the
     # user sends ctrl signals, not the firmware.
     config.quadrotor_config["ctrl_freq"] = FIRMWARE_FREQ
-    env_func = partial(make, "quadrotor", **config.quadrotor_config)
-    env = DroneRacingObservationWrapper(make("firmware", env_func, FIRMWARE_FREQ, CTRL_FREQ))
+    env_func = partial(gymnasium.make, "quadrotor", **config.quadrotor_config)
+    env = DroneRacingObservationWrapper(
+        gymnasium.make(
+            "firmware", env_func=env_func, firmware_freq=FIRMWARE_FREQ, ctrl_freq=CTRL_FREQ
+        )
+    )
 
     # Load the controller module
     path = Path(__file__).parents[1] / controller
@@ -94,7 +98,7 @@ def simulate(
         info["ctrl_freq"] = CTRL_FREQ
         lap_finished = False
         # obs = [x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r]
-        ctrl = ctrl_class(obs, info, verbose=config.verbose)
+        ctrl = ctrl_class(obs, info)
         gui_timer = p.addUserDebugText(
             "", textPosition=[0, 0, 1], physicsClientId=env.pyb_client_id
         )
@@ -161,7 +165,7 @@ def log_episode_stats(stats: dict, info: dict, config: Munch, curr_time: float, 
     stats["gates_passed"] = info["current_gate_id"]
     if stats["gates_passed"] == -1:  # The drone has passed the final gate
         stats["gates_passed"] = len(config.quadrotor_config.gates)
-    if config.quadrotor_config.done_on_collision and info["collision"][1]:
+    if info["collision"][1]:
         termination = "COLLISION"
     elif config.quadrotor_config.done_on_completion and info["task_completed"] or lap_finished:
         termination = "TASK COMPLETION"
