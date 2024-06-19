@@ -122,11 +122,11 @@ quadrotor_config:
   # Constraints
   constraints:
     # Input constraints
-    - constraint_form: default_constraint
-      constrained_variable: input
+    - type: DefaultConstraint
+      ctype: input
     # State constraints
-    - constraint_form: bounded_constraint
-      constrained_variable: state
+    - type: BoundedConstraint
+      ctype: state
       active_dims: [0, 2, 4] # The uncommented entries in the upper_bounds/lower_bounds vectors below
       upper_bounds:
       - 3     # x
