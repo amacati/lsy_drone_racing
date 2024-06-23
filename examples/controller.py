@@ -30,9 +30,9 @@ from __future__ import annotations  # Python 3.10 type hints
 from pathlib import Path
 
 import numpy as np
+import numpy.typing as npt
 from stable_baselines3 import PPO
 
-from lsy_drone_racing.command import Command
 from lsy_drone_racing.controller import BaseController
 from lsy_drone_racing.wrapper import ObsWrapper
 
@@ -71,10 +71,6 @@ class Controller(BaseController):
         self.VERBOSE = verbose
         self.BUFFER_SIZE = buffer_size
 
-        # Store a priori scenario information.
-        self.NOMINAL_GATES = initial_info["nominal_gates_pos_and_type"]
-        self.NOMINAL_OBSTACLES = initial_info["nominal_obstacles_pos"]
-
         # Reset counters and buffers.
         self.reset()
         self.episode_reset()
@@ -92,13 +88,12 @@ class Controller(BaseController):
         reward: float | None = None,
         done: bool | None = None,
         info: dict | None = None,
-    ) -> tuple[Command, list]:
-        """Pick command sent to the quadrotor through a Crazyswarm/Crazyradio-like interface.
+    ) -> npt.NDarray[np.float_]:
+        """Compute the next desired position and orientation of the drone.
 
         INSTRUCTIONS:
-            Re-implement this method to return the target position, velocity, acceleration,
-            attitude, and attitude rates to be sent from Crazyswarm to the Crazyflie using, e.g., a
-            `cmdFullState` call.
+            Re-implement this method to return the target pose to be sent from Crazyswarm to the
+            Crazyflie using the `cmdFullState` call.
 
         Args:
             ep_time: Episode's elapsed time, in seconds.
@@ -110,20 +105,15 @@ class Controller(BaseController):
                 'current_target_gate_pos', etc.
 
         Returns:
-            The command type and arguments to be sent to the quadrotor. See `Command`.
+            The drone pose [x_des, y_des, z_des, yaw_des] as a numpy array.
         """
-        target_vel = np.zeros(3)
-        target_acc = np.zeros(3)
-        target_yaw = 0.0
-        target_rpy_rates = np.zeros(3)
         obs_tf = ObsWrapper.observation_transform(obs, info, self._last_action)
         action, _ = self.policy.predict(obs_tf, deterministic=True)
         self._last_action[:] = action
         target_pos = self.action_transform(action, obs)
-
-        command_type = Command.FULLSTATE
-        args = [target_pos, target_vel, target_acc, target_yaw, target_rpy_rates, ep_time]
-        return command_type, args
+        action = np.zeros(4)
+        action[:3] = target_pos
+        return action
 
     @staticmethod
     def action_transform(action, obs):
@@ -137,8 +127,7 @@ class Controller(BaseController):
         reward: float | None = None,
         done: bool | None = None,
         info: dict | None = None,
-    ):
-        ...
+    ): ...
 
     def episode_learn(self):
         self._last_action = np.zeros(3)

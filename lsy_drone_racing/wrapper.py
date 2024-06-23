@@ -25,7 +25,7 @@ import numpy as np
 from gymnasium import Env, Wrapper
 from gymnasium.error import InvalidAction
 from gymnasium.spaces import Box
-from safe_control_gym.envs.firmware_wrapper import FirmwareWrapper
+from safe_control_gym.envs.drone_racing_env import DroneRacingEnv
 
 from lsy_drone_racing.rotations import map2pi
 
@@ -41,17 +41,17 @@ class DroneRacingWrapper(Wrapper):
 
     metadata = {"render_modes": ["human"]}
 
-    def __init__(self, env: FirmwareWrapper, terminate_on_lap: bool = True):
+    def __init__(self, env: DroneRacingEnv, terminate_on_lap: bool = True):
         """Initialize the wrapper.
 
         Args:
             env: The firmware wrapper.
             terminate_on_lap: Stop the simulation early when the drone has passed the last gate.
         """
-        if not isinstance(env, FirmwareWrapper):
-            raise TypeError(f"`env` must be an instance of `FirmwareWrapper`, is {type(env)}")
+        if not isinstance(env, DroneRacingEnv):
+            raise TypeError(f"`env` must be an instance of `DroneRacingEnv`, is {type(env)}")
         super().__init__(env)
-        # Patch the FirmwareWrapper to add any missing attributes required by the gymnasium API.
+        # Patch the DroneRacingEnv to add any missing attributes required by the gymnasium API.
         self.env = env
         # Unwrapped attribute is required for the gymnasium API. Some packages like stable-baselines
         # use it to check if the environment is unique. Therefore, we cannot use None, as None is
@@ -99,7 +99,7 @@ class DroneRacingWrapper(Wrapper):
         obs_limits_low = np.concatenate([-obs_limits_high[:-1], [-1]])
         self.observation_space = Box(obs_limits_low, obs_limits_high, dtype=np.float32)
 
-        self.pyb_client_id: int = env.env.PYB_CLIENT
+        self.pyb_client_id: int = env.env.pyb_client
         # Config and helper flags
         self.terminate_on_lap = terminate_on_lap
         self._reset_required = False
@@ -223,17 +223,21 @@ class DroneRacingWrapper(Wrapper):
         drone_vel = obs[1:6:2]
         drone_rpy = obs[6:9]
         drone_ang_vel = obs[9:12]
+        gates_pos, gates_yaw = info["gates.pos"], info["gates.rpy"][:, 2]
+        gates_pose = np.concatenate(
+            [np.concatenate([p, [y]]) for p, y in zip(gates_pos, gates_yaw)]
+        )
         obs = np.concatenate(
             [
                 drone_pos,
                 drone_rpy,
                 drone_vel,
                 drone_ang_vel,
-                info["gates_pose"][:, [0, 1, 2, 5]].flatten(),
-                info["gates_in_range"],
-                info["obstacles_pose"][:, :3].flatten(),
-                info["obstacles_in_range"],
-                [info["current_gate_id"]],
+                gates_pose,
+                info["gates.in_range"],
+                info["obstacles.pos"].flatten(),
+                info["obstacles.in_range"],
+                [info["target_gate"]],
             ]
         )
         return obs
@@ -251,16 +255,16 @@ class DroneRacingObservationWrapper:
         not compatible with the gymnasium API.
     """
 
-    def __init__(self, env: FirmwareWrapper):
+    def __init__(self, env: DroneRacingEnv):
         """Initialize the wrapper.
 
         Args:
             env: The firmware wrapper.
         """
-        # if not isinstance(env, FirmwareWrapper):
-        #     raise TypeError(f"`env` must be an instance of `FirmwareWrapper`, is {type(env)}")
+        # if not isinstance(env, DroneRacingEnv):
+        #     raise TypeError(f"`env` must be an instance of `DroneRacingEnv`, is {type(env)}")
         self.env = env.unwrapped
-        self.pyb_client_id: int = self.env.env.PYB_CLIENT
+        self.pyb_client_id: int = self.env.sim.pyb_client
 
     def __getattribute__(self, name: str) -> Any:
         """Get an attribute from the object.
@@ -304,9 +308,9 @@ class DroneRacingObservationWrapper:
         Returns:
             The transformed observation and the info dict.
         """
-        obs, reward, done, info, action = self.env.step(*args, **kwargs)
+        obs, reward, terminated, truncated, info = self.env.step(*args, **kwargs)
         obs = DroneRacingWrapper.observation_transform(obs, info)
-        return obs, reward, done, info, action
+        return obs, reward, terminated, truncated, info
 
 
 class MultiProcessingWrapper(Wrapper):
@@ -419,7 +423,7 @@ class RewardWrapper(Wrapper):
         old_gate_distance = np.linalg.norm(info["gates_pose"][gate_id, :3] - self._last_pos)
         gate_reward = (old_gate_distance - gate_distance) * 1.0
         gate_reward += (gate_id != self._last_gate) * 1.0
-        crash_penalty = -2.0 if info["collision"][1] else 0
+        crash_penalty = -2.0 if len(info["collisions"]) > 0 else 0.0
         reward = gate_reward + crash_penalty + action_penalty
         return reward
 
@@ -467,13 +471,13 @@ class ObsWrapper(Wrapper):
 
     @staticmethod
     def observation_transform(obs: np.ndarray, info: dict, action: np.ndarray | None) -> np.ndarray:
-        to_gates = info["gates_pose"][:, :3] - obs[:3]
-        gate_vec = info["gates_pose"][info["current_gate_id"], :3]
-        gate_angle = info["gates_pose"][info["current_gate_id"], 5]
+        to_gates = info["gates.pos"] - obs[:3]
+        gate_vec = info["gates.pos"][info["target_gate"]]  # TODO: BUG, Change to diff vector
+        gate_angle = info["gates.rpy"][info["target_gate"], 2]
         gate_vec /= np.linalg.norm(gate_vec)
         gate_direction = np.array([np.cos(gate_angle), np.sin(gate_angle)])
-        to_obstacles = info["obstacles_pose"][:, :3] - obs[:3]
-        gate_id_onehot = ObsWrapper._onehot(info["current_gate_id"], info["gates_pose"].shape[0])
+        to_obstacles = info["obstacles.pos"] - obs[:3]
+        gate_id_onehot = ObsWrapper._onehot(info["target_gate"], info["gates.pos"].shape[0])
         obs = np.concatenate(
             [
                 obs[:-1],

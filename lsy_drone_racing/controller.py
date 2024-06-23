@@ -17,8 +17,7 @@ from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     import numpy as np
-
-    from lsy_drone_racing.command import Command
+    import numpy.typing as npt
 
 
 class BaseController(ABC):
@@ -77,13 +76,12 @@ class BaseController(ABC):
         reward: Optional[float] = None,
         done: Optional[bool] = None,
         info: Optional[dict] = None,
-    ) -> tuple[Command, list]:
-        """Pick command sent to the quadrotor through a Crazyswarm/Crazyradio-like interface.
+    ) -> npt.NDarray[np.float_]:
+        """Compute the next desired position and orientation of the drone.
 
         INSTRUCTIONS:
-            Re-implement this method to return the target position, velocity, acceleration,
-            attitude, and attitude rates to be sent from Crazyswarm to the Crazyflie using, e.g., a
-            `cmdFullState` call.
+            Re-implement this method to return the target pose to be sent from Crazyswarm to the
+            Crazyflie using the `cmdFullState` call.
 
         Args:
             ep_time: Episode's elapsed time, in seconds.
@@ -95,8 +93,7 @@ class BaseController(ABC):
                 'current_target_gate_pos', etc.
 
         Returns:
-            Command: selected type of command (takeOff, cmdFullState, etc., see `Command`).
-            List: arguments for the type of command (see comments in class `Command`)
+            The drone pose [x_des, y_des, z_des, yaw_des] as a numpy array.
         """
 
     def step_learn(self, action: list, obs: list, reward: float, done: bool, info: dict):

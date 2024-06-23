@@ -21,8 +21,6 @@ import numpy as np
 import pybullet as p
 import safe_control_gym  # noqa: F401
 
-from lsy_drone_racing.command import apply_sim_command
-from lsy_drone_racing.constants import FIRMWARE_FREQ
 from lsy_drone_racing.utils import load_config, load_controller
 from lsy_drone_racing.wrapper import DroneRacingObservationWrapper
 
@@ -34,11 +32,10 @@ logger = logging.getLogger(__name__)
 
 
 def simulate(
-    config: str = "config/getting_started.yaml",
+    config: str = "config/getting_started.toml",
     controller: str = "examples/controller.py",
     n_runs: int = 1,
     gui: bool = True,
-    terminate_on_lap: bool = True,
 ) -> list[float]:
     """Evaluate the drone controller over multiple episodes.
 
@@ -47,44 +44,22 @@ def simulate(
         controller: The path to the controller module.
         n_runs: The number of episodes.
         gui: Enable/disable the simulation GUI.
-        terminate_on_lap: Stop the simulation early when the drone has passed the last gate.
 
     Returns:
         A list of episode times.
     """
     # Load configuration and check if firmare should be used.
     config = load_config(Path(config))
-    # Overwrite config options
-    config.quadrotor_config.gui = gui
-    CTRL_FREQ = config.quadrotor_config["ctrl_freq"]
-    CTRL_DT = 1 / CTRL_FREQ
+    config.sim.gui = gui
 
-    # Create environment.
-    pyb_freq = config.quadrotor_config["sim_freq"]
-    assert pyb_freq % FIRMWARE_FREQ == 0, "pyb_freq must be a multiple of firmware freq"
-    # The env.step is called at a firmware_freq rate, but this is not as intuitive to the end
-    # user, and so we abstract the difference. This allows ctrl_freq to be the rate at which the
-    # user sends ctrl signals, not the firmware.
-    config.quadrotor_config["ctrl_freq"] = FIRMWARE_FREQ
-    env_func = partial(gymnasium.make, "quadrotor", **config.quadrotor_config)
-    env = DroneRacingObservationWrapper(
-        gymnasium.make(
-            "firmware", env_func=env_func, firmware_freq=FIRMWARE_FREQ, ctrl_freq=CTRL_FREQ
-        )
-    )
+    env = DroneRacingObservationWrapper(gymnasium.make("drone_racing-v0", config=config))
 
     # Load the controller module
     path = Path(__file__).parents[1] / controller
     ctrl_class = load_controller(path)  # This returns a class, not an instance
 
     # Create a statistics collection
-    stats = {
-        "ep_reward": 0,
-        "collisions": 0,
-        "collision_objects": set(),
-        "violations": 0,
-        "gates_passed": 0,
-    }
+    stats = {"ep_reward": 0, "collisions": 0, "violations": 0, "gates_passed": 0}
     ep_times = []
 
     # Run the episodes.
@@ -94,9 +69,8 @@ def simulate(
         action = np.zeros(4)
         reward = 0
         obs, info = env.reset()
-        info["ctrl_timestep"] = CTRL_DT
-        info["ctrl_freq"] = CTRL_FREQ
-        lap_finished = False
+        info["ctrl_timestep"] = config.env.freq
+        info["ctrl_freq"] = 1 / config.env.freq
         # obs = [x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r]
         ctrl = ctrl_class(obs, info)
         gui_timer = p.addUserDebugText(
@@ -104,12 +78,12 @@ def simulate(
         )
         i = 0
         while not done:
-            curr_time = i * CTRL_DT
+            curr_time = i / config.env.freq
             gui_timer = p.addUserDebugText(
                 "Ep. time: {:.2f}s".format(curr_time),
                 textPosition=[0, 0, 1.5],
                 textColorRGB=[1, 0, 0],
-                lifeTime=3 * CTRL_DT,
+                lifeTime=3 / config.env.freq,
                 textSize=1.5,
                 parentObjectUniqueId=0,
                 parentLinkIndex=-1,
@@ -119,58 +93,47 @@ def simulate(
 
             # Get the observation from the motion capture system
             # Compute control input.
-            command_type, args = ctrl.compute_control(curr_time, obs, reward, done, info)
-            # Apply the control input to the drone. This is a deviation from the gym API as the
-            # action is not applied in env.step()
-            apply_sim_command(env, command_type, args)
-            obs, reward, done, info, action = env.step(curr_time, action)
+            action = ctrl.compute_control(curr_time, obs, reward, done, info)
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
             # Update the controller internal state and models.
             ctrl.step_learn(action, obs, reward, done, info)
             # Add up reward, collisions, violations.
             stats["ep_reward"] += reward
-            if info["collision"][1]:
+            if info["collisions"]:
                 stats["collisions"] += 1
-                stats["collision_objects"].add(info["collision"][0])
             stats["violations"] += "constraint_violation" in info and info["constraint_violation"]
 
             # Synchronize the GUI.
-            if config.quadrotor_config.gui:
-                if (elapsed := time.time() - ep_start) < CTRL_DT * i:
-                    time.sleep(CTRL_DT * i - elapsed)
+            if config.sim.gui:
+                if (elapsed := time.time() - ep_start) < i / config.env.freq:
+                    time.sleep(i / config.env.freq - elapsed)
             i += 1
-            # Break early after passing the last gate (=> gate -1) or task completion
-            if terminate_on_lap and info["current_gate_id"] == -1:
-                info["task_completed"], lap_finished = True, True
-            if info["task_completed"]:
-                done = True
 
         # Learn after the episode if the controller supports it
         ctrl.episode_learn()  # Update the controller internal state and models.
-        log_episode_stats(stats, info, config, curr_time, lap_finished)
+        log_episode_stats(stats, info, config, curr_time)
         ctrl.episode_reset()
         # Reset the statistics
         stats["ep_reward"] = 0
         stats["collisions"] = 0
-        stats["collision_objects"] = set()
         stats["violations"] = 0
-        ep_times.append(curr_time if info["current_gate_id"] == -1 else None)
+        ep_times.append(curr_time if info["target_gate"] == -1 else None)
 
     # Close the environment
     env.close()
     return ep_times
 
 
-def log_episode_stats(stats: dict, info: dict, config: Munch, curr_time: float, lap_finished: bool):
+def log_episode_stats(stats: dict, info: dict, config: Munch, curr_time: float):
     """Log the statistics of a single episode."""
-    stats["gates_passed"] = info["current_gate_id"]
+    stats["gates_passed"] = info["target_gate"]
     if stats["gates_passed"] == -1:  # The drone has passed the final gate
-        stats["gates_passed"] = len(config.quadrotor_config.gates)
-    if info["collision"][1]:
+        stats["gates_passed"] = len(config.env.track.gates)
+    if info["collisions"]:
         termination = "COLLISION"
-    elif config.quadrotor_config.done_on_completion and info["task_completed"] or lap_finished:
-        termination = "TASK COMPLETION"
-    elif config.quadrotor_config.done_on_violation and info["constraint_violation"]:
-        termination = "CONSTRAINT VIOLATION"
+    elif info["target_gate"] == -1:
+        termination = "TASK COMPLETED"
     else:
         termination = "MAX EPISODE DURATION"
     logger.info(
