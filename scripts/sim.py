@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import time
-from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -19,7 +18,6 @@ import fire
 import gymnasium
 import numpy as np
 import pybullet as p
-import safe_control_gym  # noqa: F401
 
 from lsy_drone_racing.utils import load_config, load_controller
 from lsy_drone_racing.wrapper import DroneRacingObservationWrapper

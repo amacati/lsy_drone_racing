@@ -1,4 +1,5 @@
 """SAC agent training script for drone racing."""
+
 from __future__ import annotations
 
 import logging
@@ -11,7 +12,6 @@ import pip._vendor.tomli as tomllib
 import torch
 import wandb
 from munch import Munch, munchify
-from safe_control_gym.utils.registration import make
 from stable_baselines3 import PPO, SAC, TD3
 from stable_baselines3.common.callbacks import CallbackList, EvalCallback
 from stable_baselines3.common.env_util import SubprocVecEnv, make_vec_env

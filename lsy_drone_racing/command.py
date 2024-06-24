@@ -41,7 +41,6 @@ def apply_sim_command(wrapped_env: FirmwareWrapper, command_type: Command, args:
         args: Additional arguments as potentially required by `command_type`.
     """
     if command_type == Command.FULLSTATE:
-        print(args)
         wrapped_env.sendFullStateCmd(*args)
     elif command_type == Command.TAKEOFF:
         wrapped_env.sendTakeoffCmd(*args)

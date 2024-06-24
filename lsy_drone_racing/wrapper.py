@@ -25,9 +25,8 @@ import numpy as np
 from gymnasium import Env, Wrapper
 from gymnasium.error import InvalidAction
 from gymnasium.spaces import Box
-from safe_control_gym.envs.drone_racing_env import DroneRacingEnv
 
-from lsy_drone_racing.rotations import map2pi
+from lsy_drone_racing.envs.drone_racing_env import DroneRacingEnv
 
 logger = logging.getLogger(__name__)
 
