@@ -118,8 +118,12 @@ class DroneRacingEnv(gymnasium.Env):
 
     @property
     def obs(self) -> dict[str, npt.ndarray[np.float_]]:
-        obs = {k: getattr(self.sim.drone, k).copy() for k in ("pos", "rpy", "vel", "ang_vel")}
-        # Convert angular velocity to body frame
+        obs = {
+            "pos": self.sim.drone.pos.copy(),
+            "rpy": self.sim.drone.rpy.copy(),
+            "vel": self.sim.drone.vel.copy(),
+            "ang_vel": self.sim.drone.ang_vel.copy(),
+        }
         obs["ang_vel"] = R.from_euler("XYZ", obs["rpy"]).as_matrix().T @ obs["ang_vel"]
         if "observation" in self.sim.disturbances:
             obs = self.sim.disturbances["observation"].apply(obs)
@@ -148,6 +152,7 @@ class DroneRacingEnv(gymnasium.Env):
         info["collisions"] = self.sim.collisions
         gates = self.sim.gates
         info["target_gate"] = self.target_gate if self.target_gate < len(gates) else -1
+        info["drone.pos"] = self.sim.drone.pos.copy()
         # Add the gate and obstacle poses to the info. If gates or obstacles are in sensor range,
         # use the actual pose, otherwise use the nominal pose.
         in_range = self.sim.in_range(gates, self.sim.drone, VISIBILITY_RANGE)

@@ -19,14 +19,15 @@ Warning:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from gymnasium import Env, Wrapper
 from gymnasium.error import InvalidAction
 from gymnasium.spaces import Box
 
-from lsy_drone_racing.envs.drone_racing_env import DroneRacingEnv
+if TYPE_CHECKING:
+    from lsy_drone_racing.envs.drone_racing_env import DroneRacingEnv
 
 logger = logging.getLogger(__name__)
 
@@ -47,18 +48,7 @@ class DroneRacingWrapper(Wrapper):
             env: The firmware wrapper.
             terminate_on_lap: Stop the simulation early when the drone has passed the last gate.
         """
-        if not isinstance(env, DroneRacingEnv):
-            raise TypeError(f"`env` must be an instance of `DroneRacingEnv`, is {type(env)}")
         super().__init__(env)
-        # Patch the DroneRacingEnv to add any missing attributes required by the gymnasium API.
-        self.env = env
-        # Unwrapped attribute is required for the gymnasium API. Some packages like stable-baselines
-        # use it to check if the environment is unique. Therefore, we cannot use None, as None is
-        # None returns True and falsely indicates that the environment is not unique. Lists have
-        # unique id()s, so we use lists as a dummy instead.
-        self.env.unwrapped = []
-        self.env.render_mode = None
-
         # Gymnasium env required attributes
         # Action space:
         # [x, y, z, yaw]
@@ -85,8 +75,8 @@ class DroneRacingWrapper(Wrapper):
         # obstacles_in_range)  A boolean array indicating if the drone is within the obstacles'
         #       range. The length is dependent on the number of obstacles.
         # gate_id)  The ID of the current target gate. -1 if the task is completed.
-        n_gates = env.env.NUM_GATES
-        n_obstacles = env.env.n_obstacles
+        n_gates = self.env.unwrapped.sim.n_gates
+        n_obstacles = self.env.unwrapped.sim.n_obstacles
         # Velocity limits are set to 10 m/s for the drone and 10 rad/s for the angular velocity.
         # While drones could go faster in theory, it's not safe in practice and we don't allow it in
         # sim either.
@@ -97,22 +87,8 @@ class DroneRacingWrapper(Wrapper):
         obs_limits_high = np.array(obs_limits)
         obs_limits_low = np.concatenate([-obs_limits_high[:-1], [-1]])
         self.observation_space = Box(obs_limits_low, obs_limits_high, dtype=np.float32)
-
-        self.pyb_client_id: int = env.env.pyb_client
-        # Config and helper flags
-        self.terminate_on_lap = terminate_on_lap
-        self._reset_required = False
-        # The original firmware wrapper requires a sim time as input to the step function. This
-        # breaks the gymnasium interface. Instead, we keep track of the sim time here. On each step,
-        # it is incremented by the control time step. On env reset, it is reset to 0.
-        self._sim_time = 0.0
+        self.pyb_client: int = self.env.unwrapped.sim.pyb_client
         self._drone_pose = None
-        # The firmware quadrotor env requires the rotor forces as input to the step function. These
-        # are zero initially and updated by the step function. We automatically insert them to
-        # ensure compatibility with the gymnasium interface.
-        # TODO: It is not clear if the rotor forces are even used in the firmware env. Initial tests
-        #       suggest otherwise.
-        self._f_rotors = np.zeros(4)
 
     @property
     def time(self) -> float:
@@ -131,12 +107,8 @@ class DroneRacingWrapper(Wrapper):
         Returns:
             The initial observation and info dict of the next episode.
         """
-        self._reset_required = False
-        self._sim_time = 0.0
-        self._f_rotors[:] = 0.0
         obs, info = self.env.reset()
         self._drone_pos = obs[:3]
-        # Store obstacle height for observation expansion during env steps.
         obs = self.observation_transform(obs, info).astype(np.float32)
         return obs, info
 
@@ -149,40 +121,13 @@ class DroneRacingWrapper(Wrapper):
         Returns:
             The next observation, the reward, the terminated and truncated flags, and the info dict.
         """
-        assert not self._reset_required, "Environment must be reset before taking a step"
         if action not in self.action_space:
-            # Wrapper has a reduced action space compared to the firmware env to make it compatible
-            # with the gymnasium interface and popular RL libraries.
             raise InvalidAction(f"Invalid action: {action}")
         action = self._action_transform(action)
-        assert action.shape[-1] == 3, "Action must have shape (..., 4)"
-        # The firmware does not use the action input in the step function
-        zeros = np.zeros(3)
-        self.env.sendFullStateCmd(action, zeros, zeros, 0, zeros, self._sim_time)
-        # The firmware quadrotor env requires the sim time as input to the step function. It also
-        # returns the desired rotor forces. Both modifications are not part of the gymnasium
-        # interface. We automatically insert the sim time and reuse the last rotor forces.
-        obs, reward, done, info, f_rotors = self.env.step(self._sim_time, action=self._f_rotors)
-        self._f_rotors[:] = f_rotors
-        # We set truncated to True if the task is completed but the drone has not yet passed the
-        # final gate. We set terminated to True if the task is completed and the drone has passed
-        # the final gate.
-        terminated, truncated = False, False
-        if np.abs(obs[:3]).any() > 5:
-            terminated = True
-        if info["task_completed"] and info["current_gate_id"] != -1:
-            truncated = True
-        elif self.terminate_on_lap and info["current_gate_id"] == -1:
-            info["task_completed"] = True
-            terminated = True
-        elif self.terminate_on_lap and done:  # Done, but last gate not passed -> terminate
-            terminated = True
-        # Increment the sim time after the step if we are not yet done.
-        if not terminated and not truncated:
-            self._sim_time += self.env.ctrl_dt
+        assert action.shape[-1] == 3, "Action must have shape (..., 3)"
+        obs, reward, terminated, truncated, info = self.env.step(np.concatenate([action, [0]]))
         obs = self.observation_transform(obs, info).astype(np.float32)
         self._drone_pos = obs[:3]
-        self._reset_required = terminated or truncated
         return obs, reward, terminated, truncated, info
 
     def _action_transform(self, action: np.ndarray) -> np.ndarray:
@@ -195,17 +140,6 @@ class DroneRacingWrapper(Wrapper):
             The transformed action.
         """
         return self._drone_pos + (action * self.action_scale)
-
-    def render(self):
-        """Render the environment.
-
-        Used for compatibility with the gymnasium API. Checks if PyBullet was launched with an
-        active GUI.
-
-        Raises:
-            AssertionError: If PyBullet was not launched with an active GUI.
-        """
-        assert self.pyb_client_id != -1, "PyBullet not initialized with active GUI"
 
     @staticmethod
     def observation_transform(obs: np.ndarray, info: dict[str, Any]) -> np.ndarray:
@@ -263,7 +197,7 @@ class DroneRacingObservationWrapper:
         # if not isinstance(env, DroneRacingEnv):
         #     raise TypeError(f"`env` must be an instance of `DroneRacingEnv`, is {type(env)}")
         self.env = env.unwrapped
-        self.pyb_client_id: int = self.env.sim.pyb_client
+        self.pyb_client: int = self.env.unwrapped.sim.pyb_client
 
     def __getattribute__(self, name: str) -> Any:
         """Get an attribute from the object.
@@ -369,8 +303,8 @@ class RewardWrapper(Wrapper):
             The initial observation of the next episode.
         """
         obs, info = self.env.reset(*args, **kwargs)
-        self._last_gate = info["current_gate_id"]
-        self._last_pos = info["drone_pose"][:3]
+        self._last_gate = info["target_gate"]
+        self._last_pos = info["drone.pos"]
         self._last_action = None
         return obs, info
 
@@ -385,8 +319,8 @@ class RewardWrapper(Wrapper):
         """
         obs, reward, terminated, truncated, info = self.env.step(action)
         reward = self._compute_reward(obs, action, reward, terminated, truncated, info)
-        self._last_gate = info["current_gate_id"]
-        self._last_pos = info["drone_pose"][:3]
+        self._last_gate = info["target_gate"]
+        self._last_pos = info["drone.pos"]
         self._last_action = action
         return obs, reward, terminated, truncated, info
 
@@ -412,14 +346,14 @@ class RewardWrapper(Wrapper):
         Returns:
             The computed reward.
         """
-        gate_id = info["current_gate_id"]
-        drone_pos = info["drone_pose"][:3]
+        gate_id = info["target_gate"]
+        drone_pos = info["drone.pos"]
         if self._last_action is not None:
             action_penalty = -0.005 * np.linalg.norm(action - self._last_action)
         else:
             action_penalty = 0
-        gate_distance = np.linalg.norm(info["gates_pose"][gate_id, :3] - drone_pos)
-        old_gate_distance = np.linalg.norm(info["gates_pose"][gate_id, :3] - self._last_pos)
+        gate_distance = np.linalg.norm(info["gates.pos"][gate_id] - drone_pos)
+        old_gate_distance = np.linalg.norm(info["gates.pos"][gate_id] - self._last_pos)
         gate_reward = (old_gate_distance - gate_distance) * 1.0
         gate_reward += (gate_id != self._last_gate) * 1.0
         crash_penalty = -2.0 if len(info["collisions"]) > 0 else 0.0

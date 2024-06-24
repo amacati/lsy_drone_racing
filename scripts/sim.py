@@ -71,9 +71,7 @@ def simulate(
         info["ctrl_freq"] = 1 / config.env.freq
         # obs = [x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r]
         ctrl = ctrl_class(obs, info)
-        gui_timer = p.addUserDebugText(
-            "", textPosition=[0, 0, 1], physicsClientId=env.pyb_client_id
-        )
+        gui_timer = p.addUserDebugText("", textPosition=[0, 0, 1], physicsClientId=env.pyb_client)
         i = 0
         while not done:
             curr_time = i / config.env.freq
@@ -86,7 +84,7 @@ def simulate(
                 parentObjectUniqueId=0,
                 parentLinkIndex=-1,
                 replaceItemUniqueId=gui_timer,
-                physicsClientId=env.pyb_client_id,
+                physicsClientId=env.pyb_client,
             )
 
             # Get the observation from the motion capture system
