@@ -74,6 +74,7 @@ def test_multiprocessing_wrapper():
 def test_multiprocessing_wrapper_sb3():
     """Test if the multiprocessing wrapper can be used for sb3's vecenv."""
     config = load_config(Path(__file__).parent / "config/test.toml")
+    config.env.symbolic = True  # Enforce symbolic models to check if the wrapper can handle them
     env = make_vec_env(
         lambda: MultiProcessingWrapper(
             DroneRacingWrapper(gymnasium.make("drone_racing-v0", config=config))

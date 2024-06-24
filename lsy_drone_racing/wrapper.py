@@ -249,9 +249,12 @@ class DroneRacingObservationWrapper:
 class MultiProcessingWrapper(Wrapper):
     """Wrapper to enable multiprocessing for vectorized environments.
 
-    The info dict returned by the firmware wrapper contains CasADi models. These models cannot be
-    pickled and therefore cannot be passed between processes. This wrapper removes the CasADi models
-    from the info dict to enable multiprocessing.
+    The info dict returned by the environment may contain CasADi models. These models cannot be
+    pickled and therefore cannot be passed between processes. This wrapper overrides the environment
+    settings to enfoce the removal of the CasADi models to enable multiprocessing.
+
+    Alternatively, the symbolic models can be removed in the config file by setting
+    `env.symbolic = False`.
     """
 
     def __init__(self, env: Env):
@@ -261,22 +264,7 @@ class MultiProcessingWrapper(Wrapper):
             env: The firmware wrapper.
         """
         super().__init__(env)
-
-    def reset(self, *args: Any, **kwargs: dict[str, Any]) -> tuple[np.ndarray, dict]:
-        """Reset the environment.
-
-        Returns:
-            The initial observation of the next episode.
-        """
-        obs, info = self.env.reset(*args, **kwargs)
-        return obs, self._remove_non_serializable(info)
-
-    def _remove_non_serializable(self, info: dict[str, Any]) -> dict[str, Any]:
-        """Remove non-serializable objects from the info dict."""
-        # CasADi models cannot be pickled and therefore cannot be passed between processes
-        info.pop("symbolic_model", None)
-        info.pop("symbolic_constraints", None)
-        return info
+        self.env.unwrapped.symbolic = False
 
 
 class RewardWrapper(Wrapper):
