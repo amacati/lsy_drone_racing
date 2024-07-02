@@ -28,9 +28,6 @@ class DroneRacingEnv(gymnasium.Env):
 
         Args:
             config: Configuration dictionary for the environment.
-
-        Attributes:
-            env: safe-control environment
         """
         super().__init__()
         self.config = config
