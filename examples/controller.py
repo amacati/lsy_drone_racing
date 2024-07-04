@@ -41,11 +41,7 @@ class Controller(BaseController):
     """Template controller class."""
 
     def __init__(
-        self,
-        initial_obs: np.ndarray,
-        initial_info: dict,
-        buffer_size: int = 100,
-        verbose: bool = False,
+        self, initial_obs: npt.NDArray[np.floating], initial_info: dict, buffer_size: int = 100
     ):
         """Initialization of the controller.
 
@@ -55,40 +51,18 @@ class Controller(BaseController):
             constants, counters, pre-plan trajectories, etc.
 
         Args:
-            initial_obs: The initial observation of the environment's state. Consists of
-                [drone_xyz_yaw, gates_xyz_yaw, gates_in_range, obstacles_xyz, obstacles_in_range,
-                gate_id]
-            initial_info: The a priori information as a dictionary with keys 'symbolic_model',
-                'nominal_physical_parameters', 'nominal_gates_pos_and_type', etc.
+            initial_obs: The initial observation of the environment's state. See the environment's
+                observation space for details.
+            initial_info: Additional environment information from the reset.
             buffer_size: Size of the data buffers used in method `learn()`.
-            verbose: Turn on and off additional printouts and plots.
         """
-        super().__init__(initial_obs, initial_info, buffer_size, verbose)
-        # Save environment and control parameters.
-        self.CTRL_TIMESTEP = initial_info["ctrl_timestep"]
-        self.CTRL_FREQ = initial_info["ctrl_freq"]
-        self.initial_obs = initial_obs
-        self.VERBOSE = verbose
-        self.BUFFER_SIZE = buffer_size
-
-        # Reset counters and buffers.
-        self.reset()
-        self.episode_reset()
-
-        #########################
-        # REPLACE THIS (START) ##
-        #########################
+        super().__init__(initial_obs, initial_info, buffer_size)
         self.policy = PPO.load(Path(__file__).resolve().parents[1] / "models/ppo/model.zip")
         self._last_action = np.zeros(3)
 
     def compute_control(
-        self,
-        ep_time: float,
-        obs: np.ndarray,
-        reward: float | None = None,
-        done: bool | None = None,
-        info: dict | None = None,
-    ) -> npt.NDarray[np.float_]:
+        self, obs: npt.NDArray[np.floating], info: dict | None = None
+    ) -> npt.NDarray[np.floating]:
         """Compute the next desired position and orientation of the drone.
 
         INSTRUCTIONS:
@@ -96,13 +70,9 @@ class Controller(BaseController):
             Crazyflie using the `cmdFullState` call.
 
         Args:
-            ep_time: Episode's elapsed time, in seconds.
-            obs: The environment's observation [drone_xyz_yaw, gates_xyz_yaw, gates_in_range,
-                obstacles_xyz, obstacles_in_range, gate_id].
-            reward: The reward signal.
-            done: Wether the episode has terminated.
-            info: Current step information as a dictionary with keys 'constraint_violation',
-                'current_target_gate_pos', etc.
+            obs: The current observation of the environment. See the environment's observation space
+                for details.
+            info: Optional additional information as a dictionary.
 
         Returns:
             The drone pose [x_des, y_des, z_des, yaw_des] as a numpy array.
@@ -116,18 +86,11 @@ class Controller(BaseController):
         return action
 
     @staticmethod
-    def action_transform(action, obs):
+    def action_transform(
+        action: npt.NDArray[np.floating], obs: npt.NDArray[np.floating]
+    ) -> npt.NDArray[np.floating]:
         drone_pos = obs[:3]
         return drone_pos + action
 
-    def step_learn(
-        self,
-        action: list,
-        obs: np.ndarray,
-        reward: float | None = None,
-        done: bool | None = None,
-        info: dict | None = None,
-    ): ...
-
-    def episode_learn(self):
+    def episode_reset(self):
         self._last_action = np.zeros(3)

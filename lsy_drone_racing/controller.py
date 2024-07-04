@@ -23,7 +23,9 @@ if TYPE_CHECKING:
 class BaseController(ABC):
     """Base class for controller implementations."""
 
-    def __init__(self, initial_obs: np.ndarray, initial_info: dict, buffer_size: int = 100):
+    def __init__(
+        self, initial_obs: npt.NDArray[np.floating], initial_info: dict, buffer_size: int = 100
+    ):
         """Initialization of the controller.
 
         INSTRUCTIONS:

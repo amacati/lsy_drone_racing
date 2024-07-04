@@ -79,7 +79,7 @@ def simulate(
                 "Ep. time: {:.2f}s".format(curr_time),
                 textPosition=[0, 0, 1.5],
                 textColorRGB=[1, 0, 0],
-                lifeTime=3 / config.env.freq,
+                lifeTime=0,  # 3 / config.env.freq,
                 textSize=1.5,
                 parentObjectUniqueId=0,
                 parentLinkIndex=-1,
@@ -89,11 +89,11 @@ def simulate(
 
             # Get the observation from the motion capture system
             # Compute control input.
-            action = ctrl.compute_control(curr_time, obs, reward, done, info)
+            action = ctrl.compute_control(obs, info)
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             # Update the controller internal state and models.
-            ctrl.step_learn(action, obs, reward, done, info)
+            ctrl.step_learn(action, obs, reward, terminated, truncated, info)
             # Add up reward, collisions, violations.
             stats["ep_reward"] += reward
             if info["collisions"]:
