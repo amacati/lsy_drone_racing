@@ -43,6 +43,7 @@ class SimSettings:
     camera_projection: tuple[float, ...] = (0,) * 16
 
     def __post_init__(self):
+        """Compute the camera projection and view matrices based on the settings."""
         assert self.sim_freq % self.ctrl_freq == 0, "sim_freq must be divisible by ctrl_freq."
         self.camera_projection = p.computeProjectionMatrixFOV(
             fov=60.0,
@@ -82,11 +83,19 @@ class DroneSim(gymnasium.Env):
         """Initialization method for BenchmarkEnv.
 
         Args:
-            gui: Option to show PyBullet's GUI.
+            track: The configuration of gates and obstacles. Must contain at least the initial drone
+                state and can contain gates and obstacles.
             sim_freq: The frequency at which PyBullet steps (a multiple of ctrl_freq).
-            ctrl_freq: The frequency at which the environment steps.
+            ctrl_freq: The frequency at which the onboard drone controller recalculates the rotor
+                rmps.
             constraints: Dictionary to specify the constraints being used.
             disturbances: Dictionary to specify disturbances being used.
+            randomization: Dictionary to specify randomization of the environment.
+            gui: Option to show PyBullet's GUI.
+            camera_view: The camera pose for the GUI.
+            n_drones: The number of drones in the simulation. Only supports 1 at the moment.
+            physics: The physics backend to use for the simulation. For more information, see the
+                PhysicsMode enum.
         """
         assert n_drones == 1, "Only one drone is supported at the moment."
         self.drone = Drone(controller="mellinger")
@@ -95,7 +104,8 @@ class DroneSim(gymnasium.Env):
         self.settings = SimSettings(sim_freq, ctrl_freq, gui, pybullet_id=self.pyb_client)
         self.physics = Physics(self.pyb_client, 1 / sim_freq, PhysicsMode(physics))
 
-        # Create action, observation and state spaces.
+        # Create the state and action spaces of the simulation. Note that the state space is
+        # different from the observation space of any derived environment.
         min_thrust, max_thrust = self.drone.params.min_thrust, self.drone.params.max_thrust
         self.action_space = spaces.Box(low=min_thrust, high=max_thrust, shape=(4,))
         # pos in meters, rpy in radians, vel in m/s ang_vel in rad/s
@@ -138,20 +148,21 @@ class DroneSim(gymnasium.Env):
             self.gates = {i: g.toDict() for i, g in enumerate(gates)}
             # Add nominal values to not loose the default when randomizing.
             for i, gate in self.gates.items():
-                self.gates[i].update({"nominal_" + k: v for k, v in gate.items()})
+                self.gates[i].update({"nominal." + k: v for k, v in gate.items()})
         self.n_gates = len(self.gates)
 
         self.obstacles = {}
         if obstacles := track.get("obstacles"):
             self.obstacles = {i: o.toDict() for i, o in enumerate(obstacles)}
             for i, obstacle in self.obstacles.items():
-                self.obstacles[i].update({"nominal_" + k: v for k, v in obstacle.items()})
+                self.obstacles[i].update({"nominal." + k: v for k, v in obstacle.items()})
         self.n_obstacles = len(self.obstacles)
 
         # Helper variables
         self._recording = None  # PyBullet recording.
+        self.reset()
 
-    def step(self, desired_thrust: npt.NDArray[np.float_]):
+    def step(self, desired_thrust: npt.NDArray[np.floating]):
         """Advance the environment by one control step.
 
         Args:
@@ -173,10 +184,10 @@ class DroneSim(gymnasium.Env):
         """Reset the simulation to its original state."""
         for mode in self.disturbances.keys():
             self.disturbances[mode].reset()
-        self.drone.reset()
         self._reset_pybullet()
         self._randomize_drone()
         self._sync_pyb_to_sim()
+        self.drone.reset()
 
     @property
     def collisions(self) -> list[int]:
@@ -202,7 +213,7 @@ class DroneSim(gymnasium.Env):
         return in_range
 
     @property
-    def state(self):
+    def state(self) -> npt.NDArray[np.floating]:
         # TODO: Remove in favor of the state property in the drone class.
         pos, rpy = self.drone.pos, self.drone.rpy
         vel, ang_vel = self.drone.vel, self.drone.ang_vel
@@ -241,9 +252,10 @@ class DroneSim(gymnasium.Env):
     def record(self, path: Path):
         """Start the recording of a video output.
 
-        The format of the video output is .mp4, if GUI is True, or .png, otherwise.
-        The video is saved under folder `files/videos`.
+        The format of the video output is .mp4 and only recorded if the gui is activated.
 
+        Args:
+            path: The path to save the video output.
         """
         if not self.settings.gui:
             logger.warning("Cannot record video without GUI.")
@@ -255,7 +267,7 @@ class DroneSim(gymnasium.Env):
         )
 
     def close(self):
-        """Terminates the environment."""
+        """Stop logging and disconnect from the PyBullet simulation."""
         if self._recording is not None:
             p.stopStateLogging(self._recording, physicsClientId=self.pyb_client)
         if self.pyb_client >= 0:
@@ -263,7 +275,14 @@ class DroneSim(gymnasium.Env):
         self.pyb_client = -1
 
     def _setup_disturbances(self, disturbances: dict | None = None) -> dict[str, DisturbanceList]:
-        """Creates attributes and action spaces for the disturbances."""
+        """Creates attributes and action spaces for the disturbances.
+
+        Args:
+            disturbances: A dictionary of disturbance configurations for the environment.
+
+        Returns:
+            A dictionary of disturbance lists that fuse disturbances for each mode.
+        """
         dist = {}
         if disturbances is None:  # Default: no passive disturbances.
             return dist
@@ -307,7 +326,7 @@ class DroneSim(gymnasium.Env):
                 distrib = getattr(self.np_random, obstacle_pos.get("type"))
                 kwargs = {k: v for k, v in obstacle_pos.items() if k != "type"}
                 pos_offset = distrib(**kwargs)
-            self.obstacles[i]["pos"] = np.array(obstacle["nominal_pos"]) + pos_offset
+            self.obstacles[i]["pos"] = np.array(obstacle["nominal.pos"]) + pos_offset
             self.obstacles[i]["id"] = self._load_urdf_into_sim(
                 self.URDF_DIR / "obstacle.urdf",
                 self.obstacles[i]["pos"] + pos_offset,
@@ -316,8 +335,9 @@ class DroneSim(gymnasium.Env):
             self.pyb_objects[f"obstacle_{i}"] = self.obstacles[i]["id"]
 
     def _reset_gates(self):
+        """Reset the gates in the simulation."""
         for i, gate in self.gates.items():
-            pos_offset = np.zeros_like(gate["nominal_pos"])
+            pos_offset = np.zeros_like(gate["nominal.pos"])
             if gate_pos := self.randomization.get("gate_pos"):
                 distrib = getattr(self.np_random, gate_pos.get("type"))
                 pos_offset = distrib(**{k: v for k, v in gate_pos.items() if k != "type"})
@@ -325,8 +345,8 @@ class DroneSim(gymnasium.Env):
             if gate_rpy := self.randomization.get("gate_rpy"):
                 distrib = getattr(self.np_random, gate_rpy.get("type"))
                 rpy_offset = distrib(**{k: v for k, v in gate_rpy.items() if k != "type"})
-            gate["pos"] = np.array(gate["nominal_pos"]) + pos_offset
-            gate["rpy"] = map2pi(np.array(gate["nominal_rpy"]) + rpy_offset)  # Ensure [-pi, pi]
+            gate["pos"] = np.array(gate["nominal.pos"]) + pos_offset
+            gate["rpy"] = map2pi(np.array(gate["nominal.rpy"]) + rpy_offset)  # Ensure [-pi, pi]
             gate["id"] = self._load_urdf_into_sim(
                 self.URDF_DIR / "gate.urdf", gate["pos"], gate["rpy"], marker=str(i)
             )
@@ -335,8 +355,8 @@ class DroneSim(gymnasium.Env):
     def _load_urdf_into_sim(
         self,
         urdf_path: Path,
-        pos: npt.NDArray[np.float_],
-        rpy: npt.NDArray[np.float_] | None = None,
+        pos: npt.NDArray[np.floating],
+        rpy: npt.NDArray[np.floating] | None = None,
         marker: str | None = None,
     ) -> int:
         """Load a URDF file into the simulation.
@@ -406,9 +426,9 @@ class DroneSim(gymnasium.Env):
         p.resetBaseVelocity(self.drone.id, [0, 0, 0], [0, 0, 0], physicsClientId=self.pyb_client)
 
     def _sync_pyb_to_sim(self):
-        """Read state values from PyBullet and write them to the simulator class.
+        """Read state values from PyBullet and synchronize the drone buffers with it.
 
-        We cache the state values in the simulator class to avoid calling PyBullet too frequently.
+        We cache the state values in the drone class to avoid calling PyBullet too frequently.
         """
         pos, quat = p.getBasePositionAndOrientation(self.drone.id, physicsClientId=self.pyb_client)
         self.drone.pos[:] = np.array(pos, float)
@@ -425,7 +445,7 @@ class DroneSim(gymnasium.Env):
         """
         return symbolic(self.drone, 1 / self.settings.sim_freq)
 
-    def _thrust_to_rpm(self, thrust: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
+    def _thrust_to_rpm(self, thrust: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]:
         """Convert the desired_thrust into motors' RPMs.
 
         Args:

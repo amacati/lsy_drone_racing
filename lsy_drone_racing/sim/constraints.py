@@ -287,13 +287,13 @@ class BoundedConstraint(LinearConstraint):
             state_space: System state space.
             input_space: System input space.
             ctype: Type of constraint (state, input, or both).
-            lower_bounds (np.array or list): Lower bound of constraint.
-            upper_bounds (np.array or list): Uppbound of constraint.
-            constrained_variable (ConstrainedVariableType): Type of constraint.
+            lower_bounds: 1D array of the lower bounds. Length must match the space dimension. If
+                None, the env defaults are used.
+            upper_bounds: 1D array of the lower bounds. Length must match the space dimension. If
+                None, the env defaults are used.
             strict: Option to check for strict constraint satisfaction at the threshold (< vs <=).
-            active_dims: List specifying which dimensions the constraint is active for.
-            tolerance: The distance at which is_almost_active(env) triggers.
-
+            active_dims: Filters the constraint to only act only select certian dimensions.
+            tolerance: The distance from the constraint at which is_almost_active returns True.
         """
         self.lower_bounds = np.array(lower_bounds, ndmin=1)
         self.upper_bounds = np.array(upper_bounds, ndmin=1)
@@ -314,7 +314,7 @@ class BoundedConstraint(LinearConstraint):
 
 
 class DefaultConstraint(BoundedConstraint):
-    """Use the environment's observation_space or action_space for default state or input bound constraints.
+    """Default constraints on states and inputs based on the observation and action space.
 
     This class only constraint either STATE or INPUT constraint but not both. The class constrains
     the entire variable, i.e. no `active_dims` option. For other options, use BoundedConstraint.
@@ -341,7 +341,7 @@ class DefaultConstraint(BoundedConstraint):
             upper_bounds: 1D array of the lower bounds. Length must match the space dimension. If
                 None, the env defaults are used.
             strict: Option to check for strict constraint satisfaction at the threshold (< vs <=).
-            tolerance: The distance at which is_almost_active(env) triggers.
+            tolerance: The distance from the constraint at which is_almost_active returns True.
         """
         if ctype == ConstrainedVariableType.STATE:
             cspace = spaces.flatten_space(state_space)

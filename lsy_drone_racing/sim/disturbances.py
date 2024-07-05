@@ -11,7 +11,13 @@ import numpy.typing as npt
 class Disturbance:
     """Base class for disturbance or noise applied to inputs or dyanmics."""
 
-    def __init__(self, dim: int, mask: npt.NDArray[np.bool_] | None = None):
+    def __init__(self, dim: int, mask: npt.NDArray[np.bool] | None = None):
+        """Initialize basic disturbance parameters.
+
+        Args:
+            dim: The dimensionality of the disturbance.
+            mask: A boolean mask to apply the disturbance to only certain dimensions.
+        """
         self.dim = dim
         self.mask = mask
         self.np_random = np.random.default_rng()
@@ -21,17 +27,35 @@ class Disturbance:
         self.step = 0
 
     def reset(self):
+        """Reset the disturbance to its initial state."""
         self.step = 0
 
     def step(self):
+        """Increment the disturbance step.
+
+        This is useful for disturbances that change over time.
+        """
         self.step += 1
 
-    def apply(self, target: npt.NDArray[np.float_]) -> npt.NDArray[np.float_]:
-        """Default is identity."""
+    def apply(self, target: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]:
+        """Apply the disturbance to the target.
+
+        The default implementation returns the target unchanged.
+
+        Args:
+            target: The target to apply the disturbance to.
+
+        Returns:
+            The disturbed target.
+        """
         return target
 
     def seed(self, seed: int | None = None):
-        """Reset seed from env."""
+        """Set the random number generator seed for the disturbance for deterministic behaviour.
+
+        Args:
+            seed: The seed to set the random number generator to. If None, the seed is random.
+        """
         self.np_random = np.random.default_rng(seed)
 
 

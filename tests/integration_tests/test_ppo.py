@@ -15,10 +15,11 @@ from lsy_drone_racing.wrapper import DroneRacingWrapper, MultiProcessingWrapper
 @pytest.fixture(scope="session")
 def env() -> Generator[DroneRacingEnv, None, None]:
     """Create the drone racing environment."""
-    config = load_config(Path(__file__).parent / "config/test.toml")
+    config = load_config(Path(__file__).parents[1] / "config/test.toml")
     yield gymnasium.make("drone_racing-v0", config=config)
 
 
+@pytest.mark.integration
 def test_sb3_ppo(env: DroneRacingEnv):
     """Test training with sb3 PPO."""
     env = DroneRacingWrapper(env)
@@ -26,9 +27,10 @@ def test_sb3_ppo(env: DroneRacingEnv):
     model.learn(total_timesteps=1)
 
 
+@pytest.mark.integration
 def test_sb3_ppo_vec(env: DroneRacingEnv):
     """Test training with sb3 PPO and subprocess vecenvs."""
-    config = load_config(Path(__file__).parent / "config/test.toml")
+    config = load_config(Path(__file__).parents[1] / "config/test.toml")
     env = make_vec_env(
         lambda: MultiProcessingWrapper(
             DroneRacingWrapper(gymnasium.make("drone_racing-v0", config=config))

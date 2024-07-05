@@ -153,9 +153,9 @@ class DroneRacingEnv(gymnasium.Env):
         # Add the gate and obstacle poses to the info. If gates or obstacles are in sensor range,
         # use the actual pose, otherwise use the nominal pose.
         in_range = self.sim.in_range(gates, self.sim.drone, VISIBILITY_RANGE)
-        gates_pos = np.stack([g["nominal_pos"] for g in gates.values()])
+        gates_pos = np.stack([g["nominal.pos"] for g in gates.values()])
         gates_pos[in_range] = np.stack([g["pos"] for g in gates.values()])[in_range]
-        gates_rpy = np.stack([g["nominal_rpy"] for g in gates.values()])
+        gates_rpy = np.stack([g["nominal.rpy"] for g in gates.values()])
         gates_rpy[in_range] = np.stack([g["rpy"] for g in gates.values()])[in_range]
         info["gates.pos"] = gates_pos
         info["gates.rpy"] = gates_rpy
@@ -163,7 +163,7 @@ class DroneRacingEnv(gymnasium.Env):
 
         obstacles = self.sim.obstacles
         in_range = self.sim.in_range(obstacles, self.sim.drone, VISIBILITY_RANGE)
-        obstacles_pos = np.stack([o["nominal_pos"] for o in obstacles.values()])
+        obstacles_pos = np.stack([o["nominal.pos"] for o in obstacles.values()])
         obstacles_pos[in_range] = np.stack([o["pos"] for o in obstacles.values()])[in_range]
         info["obstacles.pos"] = obstacles_pos
         info["obstacles.in_range"] = in_range

@@ -9,9 +9,10 @@ from lsy_drone_racing.sim.physics import PhysicsMode
 
 
 @pytest.mark.parametrize("physics", PhysicsMode)
+@pytest.mark.integration
 def test_sim(physics: PhysicsMode):
     """Test the simulation environment with different physics modes."""
-    with open(Path(__file__).parent / "config/test.toml") as f:
+    with open(Path(__file__).parents[1] / "config/test.toml") as f:
         config = munchify(toml.load(f))
     config.sim.physics = physics  # override physics mode
     env = gymnasium.make("drone_racing-v0", config=config)
