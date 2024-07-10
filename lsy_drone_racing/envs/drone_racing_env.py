@@ -11,7 +11,7 @@ import pybullet as p
 from scipy.spatial.transform import Rotation as R
 
 from lsy_drone_racing.sim.drone import Drone
-from lsy_drone_racing.sim.drone_sim import DroneSim
+from lsy_drone_racing.sim.drone_sim import Sim
 
 spec = importlib.util.find_spec("pycffirmware")
 firm = importlib.util.module_from_spec(spec)
@@ -33,7 +33,7 @@ class DroneRacingEnv(gymnasium.Env):
         self.config = config
         self.drone = Drone(self.CONTROLLER)
         self.step_freq = config.env.freq
-        self.sim = DroneSim(
+        self.sim = Sim(
             track=config.env.track,
             sim_freq=config.sim.sim_freq,
             ctrl_freq=config.sim.ctrl_freq,

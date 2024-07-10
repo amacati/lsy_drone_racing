@@ -62,7 +62,7 @@ class SimSettings:
         )
 
 
-class DroneSim(gymnasium.Env):
+class Sim(gymnasium.Env):
     """Drone simulation based on gym-pybullet-drones."""
 
     URDF_DIR = Path(__file__).resolve().parent / "assets"

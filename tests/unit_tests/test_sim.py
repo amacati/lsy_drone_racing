@@ -3,14 +3,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from lsy_drone_racing.sim.drone_sim import DroneSim
+from lsy_drone_racing.sim.drone_sim import Sim
 from lsy_drone_racing.sim.physics import PhysicsMode
 from lsy_drone_racing.utils import load_config
 
 
-def create_sim(physics: PhysicsMode):
+def create_sim(physics: PhysicsMode) -> Sim:
     config = load_config(Path(__file__).parent / "config/test.toml")
-    return DroneSim(
+    return Sim(
         track=config.track,
         sim_freq=config.sim.sim_freq,
         ctrl_freq=config.sim.ctrl_freq,
@@ -26,7 +26,7 @@ def create_sim(physics: PhysicsMode):
 def test_sim_seed(physics: PhysicsMode):
     """Test if the simulation environment is deterministic with the same seed."""
     config = load_config(Path(__file__).parents[1] / "config/test.toml")
-    env = DroneSim(
+    env = Sim(
         track=config.env.track,
         sim_freq=config.sim.sim_freq,
         ctrl_freq=config.sim.ctrl_freq,
