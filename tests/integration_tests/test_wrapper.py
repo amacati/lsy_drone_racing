@@ -22,7 +22,7 @@ from lsy_drone_racing.wrapper import (
 def env() -> Generator[DroneRacingEnv, None, None]:
     """Create the drone racing environment."""
     config = load_config(Path(__file__).parents[1] / "config/test.toml")
-    yield gymnasium.make("drone_racing-v0", config=config)
+    yield gymnasium.make("DroneRacing-v0", config=config)
 
 
 @pytest.mark.parametrize("terminate_on_lap", [True, False])
@@ -67,7 +67,7 @@ def test_multiprocessing_wrapper():
     config = load_config(Path(__file__).parents[1] / "config/test.toml")
     env = make_vec_env(
         lambda: MultiProcessingWrapper(
-            DroneRacingWrapper(gymnasium.make("drone_racing-v0", config=config))
+            DroneRacingWrapper(gymnasium.make("DroneRacing-v0", config=config))
         ),
         n_envs=2,
         vec_env_cls=SubprocVecEnv,
@@ -84,7 +84,7 @@ def test_multiprocessing_wrapper_sb3():
     config.env.symbolic = True  # Enforce symbolic models to check if the wrapper can handle them
     env = make_vec_env(
         lambda: MultiProcessingWrapper(
-            DroneRacingWrapper(gymnasium.make("drone_racing-v0", config=config))
+            DroneRacingWrapper(gymnasium.make("DroneRacing-v0", config=config))
         ),
         n_envs=2,
         vec_env_cls=SubprocVecEnv,
@@ -99,7 +99,7 @@ def test_sb3_dummy_vec():
     """Test if the environment can be used for sb3's DummyVecEnv."""
     config = load_config(Path(__file__).parents[1] / "config/test.toml")
     env = make_vec_env(
-        lambda: DroneRacingWrapper(gymnasium.make("drone_racing-v0", config=config)),
+        lambda: DroneRacingWrapper(gymnasium.make("DroneRacing-v0", config=config)),
         n_envs=2,
         vec_env_cls=DummyVecEnv,
     )

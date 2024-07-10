@@ -109,8 +109,8 @@ class DroneRacingEnv(gymnasium.Env):
         self.sim.drone.desired_thrust[:] = thrust
         self._steps += 1
         terminated = self.terminated or collision
-        if terminated:
-            print(f"Time spent in check_gate_progress: {self._debug_time:.5f} s")
+        # if terminated: TODO: Revise the gate checking logic
+        # print(f"Time spent in check_gate_progress: {self._debug_time:.5f} s")
         return obs.astype(np.float32), self.reward, terminated, False, self.info
 
     @property

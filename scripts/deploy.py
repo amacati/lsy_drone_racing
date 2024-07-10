@@ -190,7 +190,7 @@ def main(config: str = "config/getting_started.yaml", controller: str = "example
 
     # Initialize the environment with ROS as backend instead of the simulator
     kwargs = {"drone": swarm.allcfs.crazyflies[0]}
-    env = gymnasium.make("drone_racing-v0", config=config, backend="ros", backend_kwargs=kwargs)
+    env = gymnasium.make("DroneRacing-v0", config=config, backend="ros", backend_kwargs=kwargs)
     obs, info = env.reset()
 
     Controller = load_controller(Path(controller))

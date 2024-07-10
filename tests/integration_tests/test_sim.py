@@ -15,7 +15,7 @@ def test_sim(physics: PhysicsMode):
     with open(Path(__file__).parents[1] / "config/test.toml") as f:
         config = munchify(toml.load(f))
     config.sim.physics = physics  # override physics mode
-    env = gymnasium.make("drone_racing-v0", config=config)
+    env = gymnasium.make("DroneRacing-v0", config=config)
     env.reset()
     while True:
         _, _, terminated, truncated, _ = env.step(env.action_space.sample())

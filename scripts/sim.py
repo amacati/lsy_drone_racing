@@ -50,7 +50,7 @@ def simulate(
     config = load_config(Path(config))
     config.sim.gui = gui
 
-    env = DroneRacingObservationWrapper(gymnasium.make("drone_racing-v0", config=config))
+    env = DroneRacingObservationWrapper(gymnasium.make("DroneRacing-v0", config=config))
 
     # Load the controller module
     path = Path(__file__).parents[1] / controller
