@@ -362,7 +362,8 @@ class Drone:
         thrust = control.thrust
         thrust = [thrust - r + p + y, thrust - r - p - y, thrust + r - p + y, thrust + r + p - y]
         thrust = np.clip(thrust, 0, self.params.max_pwm)  # Limit thrust to motor range
-        self._pwms = np.clip(self._thrust_to_pwm(thrust), self.params.min_pwm, self.params.max_pwm)
+        pwms = self._thrust_to_pwm(thrust)
+        self._pwms = np.clip(pwms, self.params.min_pwm, self.params.max_pwm)
 
     def _thrust_to_pwm(self, thrust: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """Convert thrust to PWM signal.

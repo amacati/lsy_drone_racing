@@ -160,7 +160,7 @@ class DroneSim(gymnasium.Env):
 
         # Helper variables
         self._recording = None  # PyBullet recording.
-        self.reset()
+        self.reset()  # TODO: Avoid double reset.
 
     def step(self, desired_thrust: npt.NDArray[np.floating]):
         """Advance the environment by one control step.

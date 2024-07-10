@@ -14,7 +14,7 @@ def print_benchmark_results(name: str, timings: list[float]):
 if __name__ == "__main__":
     timings = time_sim_reset(n_tests=10)
     print_benchmark_results(name="Sim reset", timings=timings)
-    sim_steps = 100
+    sim_steps = 10
     timings = time_sim_step(n_tests=10, sim_steps=sim_steps)
     print_benchmark_results(name="Sim steps", timings=timings / sim_steps)
     timings = time_sim_step(n_tests=10, sim_steps=sim_steps, physics_mode="dyn")
