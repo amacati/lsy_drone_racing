@@ -3,8 +3,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from lsy_drone_racing.sim.drone_sim import Sim
 from lsy_drone_racing.sim.physics import PhysicsMode
+from lsy_drone_racing.sim.sim import Sim
 from lsy_drone_racing.utils import load_config
 
 

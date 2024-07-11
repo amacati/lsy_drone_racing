@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import logging
 import time
 
@@ -11,11 +10,7 @@ import pybullet as p
 from scipy.spatial.transform import Rotation as R
 
 from lsy_drone_racing.sim.drone import Drone
-from lsy_drone_racing.sim.drone_sim import Sim
-
-spec = importlib.util.find_spec("pycffirmware")
-firm = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(firm)
+from lsy_drone_racing.sim.sim import Sim
 
 logger = logging.getLogger(__name__)
 

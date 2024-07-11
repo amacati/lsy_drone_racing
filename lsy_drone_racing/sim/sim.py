@@ -446,7 +446,7 @@ class Sim(gymnasium.Env):
         return symbolic(self.drone, 1 / self.settings.sim_freq)
 
     def _thrust_to_rpm(self, thrust: npt.NDArray[np.floating]) -> npt.NDArray[np.floating]:
-        """Convert the desired_thrust into motors' RPMs.
+        """Convert the desired_thrust into motor RPMs.
 
         Args:
             thrust: The desired thrust per motor.
