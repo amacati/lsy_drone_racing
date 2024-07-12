@@ -12,6 +12,7 @@ def main():
     env.reset()
     for _ in range(1000):
         env.step(env.action_space.sample())
+    # 0.455
 
 
 if __name__ == "__main__":

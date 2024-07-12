@@ -145,20 +145,16 @@ class Drone:
         vel: npt.NDArray[np.float64],
         acc: npt.NDArray[np.float64],
     ):
-        for name, value in zip(("timestamp", "roll", "pitch", "yaw"), (timestamp, *rpy)):
-            if name == "pitch":
-                value = -value  # Legacy cf coordinate system uses inverted pitch
-            setattr(self._state.attitude, name, value)
+        self._state.timestamp = timestamp
+        # Legacy cf coordinate system uses inverted pitch
+        self._state.roll, self._state.pitch, self._state.yaw = rpy * np.array([1, -1, 1])
         if self._controller == "mellinger":  # Requires quaternion
             quat = R.from_euler("XYZ", rpy, degrees=True).as_quat()
-            for name, value in zip(("x", "y", "z", "w"), quat):
-                setattr(self._state.attitudeQuaternion, name, value)
-        for name, value in zip(("x", "y", "z"), pos):
-            setattr(self._state.position, name, value)
-        for name, value in zip(("x", "y", "z"), vel):
-            setattr(self._state.velocity, name, value)
-        for name, value in zip(("x", "y", "z"), acc):
-            setattr(self._state.acc, name, value)
+            quat_state = self._state.attitudeQuaternion
+            quat_state.x, quat_state.y, quat_state.z, quat_state.w = quat
+        self._state.position.x, self._state.position.y, self._state.position.z = pos
+        self._state.velocity.x, self._state.velocity.y, self._state.velocity.z = vel
+        self._state.acc.x, self._state.acc.y, self._state.acc.z = acc
 
     def _pwms_to_thrust(self, pwms: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return self.params.kf * (self.params.pwm2rpm_scale * pwms + self.params.pwm2rpm_const) ** 2

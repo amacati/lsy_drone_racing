@@ -6,7 +6,7 @@ ctrl_freq = 500                                   # Controller frequency, in Hz.
 gui = true                                        # Enable/disable PyBullet's GUI
 
 [sim.disturbances.action]
-type = "WhiteNoise"
+type = "GaussianNoise"
 std = 0.001
 
 [sim.disturbances.dynamics]
