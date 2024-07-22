@@ -17,11 +17,10 @@ import pybullet as p
 import pybullet_data
 from gymnasium import spaces
 from gymnasium.utils import seeding
-from scipy.spatial.transform import Rotation as R
 
 from lsy_drone_racing.sim.drone import Drone
 from lsy_drone_racing.sim.noise import NoiseList
-from lsy_drone_racing.sim.physics import Constants, Physics, PhysicsMode
+from lsy_drone_racing.sim.physics import GRAVITY, Physics, PhysicsMode
 from lsy_drone_racing.sim.symbolic import SymbolicModel, symbolic
 from lsy_drone_racing.utils.rotations import map2pi
 
@@ -206,17 +205,6 @@ class Sim(gymnasium.Env):
             in_range[i] = len(closest_points) > 0
         return in_range
 
-    @property
-    def state(self) -> npt.NDArray[np.floating]:
-        # TODO: Remove in favor of the state property in the drone class.
-        pos, rpy = self.drone.pos, self.drone.rpy
-        vel, ang_vel = self.drone.vel, self.drone.ang_vel
-        ang_v_body_frame = R.from_euler("XYZ", rpy).as_matrix().T @ ang_vel
-        state = np.hstack(
-            [pos[0], vel[0], pos[1], vel[1], pos[2], vel[2], rpy, ang_v_body_frame]
-        ).reshape((12,))
-        return state
-
     def seed(self, seed: int | None = None) -> int | None:
         """Set up a random number generator for a given seed."""
         self.np_random, seed = seeding.np_random(seed)
@@ -290,7 +278,7 @@ class Sim(gymnasium.Env):
     def _reset_pybullet(self):
         """Reset PyBullet's simulation environment."""
         p.resetSimulation(physicsClientId=self.pyb_client)
-        p.setGravity(0, 0, -Constants.GRAVITY, physicsClientId=self.pyb_client)
+        p.setGravity(0, 0, -GRAVITY, physicsClientId=self.pyb_client)
         p.setRealTimeSimulation(0, physicsClientId=self.pyb_client)
         p.setTimeStep(1 / self.settings.sim_freq, physicsClientId=self.pyb_client)
         p.setAdditionalSearchPath(pybullet_data.getDataPath(), physicsClientId=self.pyb_client)

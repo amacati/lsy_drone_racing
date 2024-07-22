@@ -65,7 +65,7 @@ def csRotXYZ(phi: float, theta: float, psi: float) -> cs.MX:
     return csRotZ(psi) @ csRotY(theta) @ csRotX(phi)
 
 
-def RotXYZ(phi: float, theta: float, psi: float) -> npt.NDArray[np.float_]:
+def RotXYZ(phi: float, theta: float, psi: float) -> npt.NDArray[np.floating]:
     """Rotation matrix from euler angles as numpy array.
 
     This represents the extrinsic X-Y-Z (or quivalently the intrinsic Z-Y-X (3-2-1)) euler angle

@@ -44,7 +44,9 @@ def test_sim_seed(physics: PhysicsMode):
     for _ in range(5):
         action = env.action_space.sample()
         env.step(action)
-        states_1.append(env.state)
+        states_1.append(
+            np.concatenate([env.drone.pos, env.drone.rpy, env.drone.vel, env.drone.ang_vel])
+        )
 
     # Reset the environment and set the same seed
     env.seed(seed)
@@ -55,7 +57,9 @@ def test_sim_seed(physics: PhysicsMode):
     for _ in range(5):
         action = env.action_space.sample()
         env.step(action)
-        states_2.append(env.state)
+        states_2.append(
+            np.concatenate([env.drone.pos, env.drone.rpy, env.drone.vel, env.drone.ang_vel])
+        )
 
     # Check if the recorded states are the same
     assert np.array_equal(states_1, states_2)

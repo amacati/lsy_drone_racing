@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import casadi as cs
 from casadi import MX
 
-from lsy_drone_racing.sim.physics import Constants
+from lsy_drone_racing.sim.physics import GRAVITY
 from lsy_drone_racing.utils.transformations import csRotXYZ
 
 if TYPE_CHECKING:
@@ -137,7 +137,7 @@ def symbolic(drone: Drone, dt: float) -> SymbolicModel:
     Returns:
         The CasADi symbolic model of the environment.
     """
-    m, g = drone.nominal_params.mass, Constants.GRAVITY
+    m, g = drone.nominal_params.mass, GRAVITY
     # Define states.
     z = cs.MX.sym("z")
     z_dot = cs.MX.sym("z_dot")

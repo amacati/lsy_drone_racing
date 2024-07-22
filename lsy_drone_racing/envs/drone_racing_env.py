@@ -108,7 +108,7 @@ class DroneRacingEnv(gymnasium.Env):
         return obs.astype(np.float32), self.reward, terminated, False, self.info
 
     @property
-    def obs(self) -> dict[str, npt.ndarray[np.float_]]:
+    def obs(self) -> dict[str, npt.ndarray[np.floating]]:
         obs = {
             "pos": self.sim.drone.pos.copy(),
             "rpy": self.sim.drone.rpy.copy(),
