@@ -19,7 +19,6 @@ from gymnasium import spaces
 from gymnasium.utils import seeding
 from scipy.spatial.transform import Rotation as R
 
-from lsy_drone_racing.sim.constraints import ConstraintList
 from lsy_drone_racing.sim.drone import Drone
 from lsy_drone_racing.sim.noise import NoiseList
 from lsy_drone_racing.sim.physics import Constants, Physics, PhysicsMode
@@ -72,7 +71,6 @@ class Sim(gymnasium.Env):
         track: dict,
         sim_freq: int = 500,
         ctrl_freq: int = 500,
-        constraints: list[dict] = [],
         disturbances: dict = {},
         randomization: dict = {},
         gui: bool = False,
@@ -88,7 +86,6 @@ class Sim(gymnasium.Env):
             sim_freq: The frequency at which PyBullet steps (a multiple of ctrl_freq).
             ctrl_freq: The frequency at which the onboard drone controller recalculates the rotor
                 rmps.
-            constraints: Dictionary to specify the constraints being used.
             disturbances: Dictionary to specify disturbances being used.
             randomization: Dictionary to specify randomization of the environment.
             gui: Option to show PyBullet's GUI.
@@ -111,7 +108,7 @@ class Sim(gymnasium.Env):
         # pos in meters, rpy in radians, vel in m/s ang_vel in rad/s
         rpy_max = np.array([85 / 180 * np.pi, 85 / 180 * np.pi, np.pi], np.float32)  # Yaw unbounded
         max_flt = np.full(3, np.finfo(np.float32).max, np.float32)
-        pos_low, pos_high = np.array([-5, -5, 0]), np.array([5, 5, 2.5])
+        pos_low, pos_high = np.array([-3, -3, 0]), np.array([3, 3, 2.5])
         # State space uses 64-bit floats for better compatibility with pycffirmware.
         self.state_space = spaces.Dict(
             {
@@ -120,9 +117,6 @@ class Sim(gymnasium.Env):
                 "vel": spaces.Box(low=-max_flt, high=max_flt, dtype=np.float64),
                 "ang_vel": spaces.Box(low=-max_flt, high=max_flt, dtype=np.float64),
             }
-        )
-        self.constraints = ConstraintList.from_specs(
-            self.state_space, self.action_space, constraints
         )
         self.disturbance_config = disturbances
         self.disturbances = self._setup_disturbances(disturbances)

@@ -32,7 +32,6 @@ class DroneRacingEnv(gymnasium.Env):
             track=config.env.track,
             sim_freq=config.sim.sim_freq,
             ctrl_freq=config.sim.ctrl_freq,
-            constraints=config.env.constraints,
             disturbances=config.sim.disturbances,
             gui=config.sim.gui,
             n_drones=1,
@@ -163,14 +162,8 @@ class DroneRacingEnv(gymnasium.Env):
         info["obstacles.pos"] = obstacles_pos
         info["obstacles.in_range"] = in_range
 
-        c_value = self.sim.constraints.value(self.sim.state, self.sim.drone.desired_thrust)
-        info["constraint.values"] = c_value
-        info["constraint.violation"] = self.sim.constraints.is_violated(
-            self.sim.state, self.sim.drone.desired_thrust, c_value=c_value
-        )
         if self.symbolic:
             info["symbolic.model"] = self.sim.symbolic()
-            info["symbolic.constraints"] = self.sim.constraints.symbolic()
         return info
 
     def check_gate_progress(self):
